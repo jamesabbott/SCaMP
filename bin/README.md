@@ -39,7 +39,8 @@ trimmed, gzipped fastq files, and fastqc outputs.
 
 The bin/human_filter.pl script will carry out an alignment using bwa mem vs an appropriately
 indexed human genome database. Read-pairs which are unmapped are then extracted, and resplit into
-fastq files.
+fastq files. This stage also removes the barcode tags from the sample names since they are no
+longer required.
 
 The following may require editing:
 

@@ -19,7 +19,7 @@
 #$ -pe smp 8
 #$ -R y
 #$ -l h_rt=08:00:00,h_vmem=2G
-#$ -t 74-75
+#$ -t 1-73
 
 use warnings;
 use strict;
@@ -42,7 +42,7 @@ use File::Copy;
     my $ref_db       = "/reference_data/Homo_sapiens/v38_p0/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna";
 
     opendir DIR, $trimmed_data or die "Error opening $trimmed_data:$!";
-    my @samples = grep !/\.\.?\z/, readdir DIR;
+    my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
     close DIR;
 
     die "Incorrect number of samples ... task id = $task;
@@ -78,28 +78,28 @@ use File::Copy;
 
     # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
     # therefore we want those with 0x0012 (12), where both apply...
-    $cmd = "/usr/biosoft/cluster/samtools/current/samtools -b -f 12 -F 256 $scratch_dir/$sample.human.bam > $scratch_dir/$sample.unaligned.bam";
+    $cmd = "/usr/biosoft/cluster/samtools/current/samtools view -b -f 12 -F 256 $scratch_dir/$sample.human.bam > $scratch_dir/$sample.unaligned.bam";
     system($cmd) == 0 or die "Error executing bwa: $!";
 
     # Modify sample id's to remove barcodes, since we won't require these anymore...
+    my $orig_sample = $sample;
     $sample=~s/_[ACTG]+$//;
 
     $cmd =
-    "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar " . 
-	"INPUT=$scratch_dir/$sample.unaligned.bam FASTQ=$scratch_dir/$sample". "_1.fq
-SECOND_END_FASTQ2=$scratch_dir/$sample" . "_2.fq";
-    system($cmd) == 0 or die "Error executing command: $!";
+     "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar " . 
+ 	"INPUT=$scratch_dir/$orig_sample.unaligned.bam FASTQ=$scratch_dir/$sample". "_1.fq SECOND_END_FASTQ=$scratch_dir/$sample" . "_2.fq";
+     system($cmd) == 0 or die "Error executing command: $!";
 
     if ( !-d "$out_dir/$sample" ) {
         mkdir "$out_dir/$sample" or die $!;
     }
 
-    foreach my $fastq ($sample . "_1.fq", $sample . "_2.fq") {
-	$cmd = "gzip $scratch_dir/$fastq";
+    foreach my $fastq ($sample . ".hsfilt_1.fq", $sample . ".hsfilt_2.fq") {
+	my $cmd = "gzip $scratch_dir/$fastq";
 	system($cmd)==0 or die "Error executing command: $cmd";
 	copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
 	  or die "Error copying $fastq.gz: $!";
     }
-    #`rm -rf $scratch_dir`;
+    `rm -rf $scratch_dir`;
 }
 
