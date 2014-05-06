@@ -36,10 +36,12 @@ use File::Copy;
 
     # directory containing qc_trimmed output from stage 1
     my $trimmed_data = "/data/florinash/trimmed";
+
     # directory to write resulting bam files to
-    my $out_dir      = "/data/florinash/human_filtered_reads/";
+    my $out_dir = "/data/florinash/human_filtered_reads/";
+
     # indexed reference database to align against
-    my $ref_db       = "/reference_data/Homo_sapiens/v38_p0/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna";
+    my $ref_db = "/reference_data/Homo_sapiens/v38_p0/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna";
 
     opendir DIR, $trimmed_data or die "Error opening $trimmed_data:$!";
     my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
@@ -78,27 +80,30 @@ use File::Copy;
 
     # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
     # therefore we want those with 0x0012 (12), where both apply...
-    $cmd = "/usr/biosoft/cluster/samtools/current/samtools view -b -f 12 -F 256 $scratch_dir/$sample.human.bam > $scratch_dir/$sample.unaligned.bam";
+    $cmd =
+"/usr/biosoft/cluster/samtools/current/samtools view -b -f 12 -F 256 $scratch_dir/$sample.human.bam > $scratch_dir/$sample.unaligned.bam";
     system($cmd) == 0 or die "Error executing bwa: $!";
 
     # Modify sample id's to remove barcodes, since we won't require these anymore...
     my $orig_sample = $sample;
-    $sample=~s/_[ACTG]+$//;
+    $sample =~ s/_[ACTG]+$//;
 
     $cmd =
-     "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar " . 
- 	"INPUT=$scratch_dir/$orig_sample.unaligned.bam FASTQ=$scratch_dir/$sample". "_1.fq SECOND_END_FASTQ=$scratch_dir/$sample" . "_2.fq";
-     system($cmd) == 0 or die "Error executing command: $!";
+        "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar "
+      . "INPUT=$scratch_dir/$orig_sample.unaligned.bam FASTQ=$scratch_dir/$sample"
+      . ".hsfilt_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
+      . ".hsfilt_2.fq";
+    system($cmd) == 0 or die "Error executing command: $!";
 
     if ( !-d "$out_dir/$sample" ) {
         mkdir "$out_dir/$sample" or die $!;
     }
 
-    foreach my $fastq ($sample . ".hsfilt_1.fq", $sample . ".hsfilt_2.fq") {
-	my $cmd = "gzip $scratch_dir/$fastq";
-	system($cmd)==0 or die "Error executing command: $cmd";
-	copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
-	  or die "Error copying $fastq.gz: $!";
+    foreach my $fastq ( $sample . ".hsfilt_1.fq", $sample . ".hsfilt_2.fq" ) {
+        my $cmd = "gzip $scratch_dir/$fastq";
+        system($cmd) == 0 or die "Error executing command: $cmd";
+        copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
+          or die "Error copying $fastq.gz: $!";
     }
     `rm -rf $scratch_dir`;
 }
