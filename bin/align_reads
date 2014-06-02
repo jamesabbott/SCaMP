@@ -1,0 +1,225 @@
+#!/bin/env perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=08:00:00,h_vmem=2G
+#$ -t 1-73
+
+=pod
+
+=head1 NAME
+
+    align_reads
+
+=head1 SYNOPSIS
+
+    align_reads --in_dir /path/to/fastqs --out_dir /path/to/outputs --db [db_name] [--filter]
+
+=head1 DESCRIPTION
+
+    Aligns fastq files using BWA's mem algorithm against the specified
+    database. The script operates either in 'filter' mode (as determined by the
+    '--filter' argument), whereby the reads are aligned, and those which fail to
+    align against the database are returned as paired fastq files (hence removing
+    reads which match against the specified database), or 'align' mode, in which
+    case the bam files containing the alignments are returned as output.
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should contain per-sample subdirectories, each containing paired (preferably gzipped) fastq reads. 
+
+=item B<out_dir>: Path to write output files (in per-sample subdirectories).
+
+=item B<db>: Database to align reads against
+
+=back
+
+=head1 OPTIONAL ARGUMENTS
+
+=over 4
+
+=item B<filter>: Run script in 'filter' mode, returning paired fastq files of
+    unaligend reads rather than bam files of aligned reads
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use Carp qw(croak);
+use FindBin;
+
+{
+
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 0 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+
+    my %dbs = ( 'human' => '/reference_data/Homo_sapiens/v38_p0/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna', );
+
+    my ( $in_dir, $out_dir, $db_name, $filter, $help, $man );
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+                'out_dir=s' => \$out_dir,
+                'db=s'      => \$db_name,
+                'filter'    => \$filter,
+              );
+
+    my $ref_db = $dbs{$db_name} if ($db_name);
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1, message => \&show_dbs( \%dbs ) )
+      if ( $help || !$in_dir || !$out_dir || !$ref_db );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
+    close DIR;
+
+    die "Incorrect number of samples ... task id = $task;
+        sample number = $#samples \n " if ( $#samples < $task );
+
+    my $sample = $samples[$task];
+    chomp $sample;
+    print "\nSample $sample will be filtered against $db_name database...\n" if ($filter);
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$in_dir/$sample/" or die "Could not open $in_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+
+    # copy fastq files for sample to local storage...
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( !-d $scratch_dir ) {
+        mkdir $scratch_dir or die "mkdir failed: $!";
+    }
+
+    copy( "$in_dir/$sample/$pair1", "$scratch_dir" ) or die "$pair1 Sample copy failed: $!";
+    copy( "$in_dir/$sample/$pair2", "$scratch_dir" ) or die "$pair2 Sample copy failed: $!";
+
+    my $cmd = "/usr/biosoft/cluster/bwa/current/bwa mem -t 8 -M $ref_db $scratch_dir/$pair1 $scratch_dir/$pair2 |"
+      . " /usr/biosoft/cluster/samtools/current/samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # bwa mem seems not to write an eof correctly, so lets fix that...
+    $cmd = $FindBin::Bin . "/bam_add_eof.py $scratch_dir/$sample.$db_name.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    if ($filter) {
+
+        # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
+        # therefore we want those with 0x0012 (12), where both apply...
+        $cmd = "/usr/biosoft/cluster/samtools/current/samtools view -b -f 12 -F 256 $scratch_dir/$sample.$db_name.bam"
+          . " > $scratch_dir/$sample.$db_name.unaligned.bam";
+        system($cmd) == 0 or die "Error executing bwa: $!";
+
+        $cmd =
+            "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar "
+          . "INPUT=$scratch_dir/$sample.$db_name.unaligned.bam FASTQ=$scratch_dir/$sample"
+          . ".$db_name.filtered_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
+          . ".$db_name.filtered_2.fq";
+        system($cmd) == 0 or die "Error executing command: $!";
+
+        foreach my $fastq ( $sample . ".$db_name.filtered_1.fq", $sample . ".$db_name.filtered_2.fq" ) {
+            my $cmd = "gzip $scratch_dir/$fastq";
+            system($cmd) == 0 or die "Error executing command: $cmd";
+            copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
+              or die "Error copying $fastq.gz: $!";
+        }
+    }
+    else {
+        $cmd =
+            "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SortSam.jar "
+          . "INPUT=$scratch_dir/$sample.$db_name.bam OUTPUT=$scratch_dir/$sample.$db_name.sorted.bam "
+          . "SORT_ORDER=coordinate CREATE_INDEX=true";
+        system($cmd) == 0 or die "Error executing command: $!";
+        copy( "$scratch_dir/$sample.$db_name.sorted.bam", "$out_dir/$sample/$sample.$db_name.bam" )
+          or die "Error copying $sample.$db_name.sorted.bam:$!";
+        copy( "$scratch_dir/$sample.$db_name.sorted.bai", "$out_dir/$sample/$sample.$db_name.bai" )
+          or die "Error copying $sample.$db_name.sorted.bai:$!";
+        my ( $mapped, $paired );
+        open FLAGSTAT, "/usr/biosoft/cluster/samtools/current/samtools flagstat $scratch_dir/$sample.$db_name.bam|"
+          or die "Error opening piped filehandle: $!";
+        while (<FLAGSTAT>) {
+            $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
+            $paired = $1 if (/([0-9]+) \+ [0-9]+ properly paired/);
+        }
+        close FLAGSTAT;
+
+        open REPORT, ">$out_dir/$sample/$sample.mapping_report.txt"
+          or die "Error opening $out_dir/$sample/$sample.$db_name.mapping_report.txt:$!";
+        print REPORT "Mapping Report: $sample vs $db_name\n";
+        print REPORT "Mapped Reads: $mapped\n";
+        print REPORT "Correctly Paired Mappings: $paired\n";
+        close REPORT;
+
+    }
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+}
+
+######################################################################
+#
+# show_dbs
+#
+# Reports on configured databases
+#
+# Required params: $ (db hash)
+#
+# Returns:         $ ()
+#
+######################################################################
+
+sub show_dbs {
+
+    my $dbs = shift;
+
+    print "\nAvailable databases: " . join( "\n", keys( %{$dbs} ) ) . "\n\n";
+
+    return ();
+
+}
+
+######################################################################
