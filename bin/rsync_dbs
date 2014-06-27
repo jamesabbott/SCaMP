@@ -1,0 +1,31 @@
+#!/bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+# Quick rsycnc script for running from nodes to create local copy of
+# florinash reference databases
+#
+######################################################################
+
+use warnings;
+use strict;
+
+{
+    my $scratch = "/local_scratch/florinash_dbs";
+    my $db_dir = "/data/florinash/reference_data";
+    mkdir $scratch or die "Error creating $scratch: $!" if (!-d $scratch); 
+    
+    my @dbs = qw(
+	human ncbi_viral_genomes ensembl_plants parasites
+    );
+
+    foreach my $db(@dbs) {
+	my $cmd = "/usr/bin/rsync -av --delete --exclude raw_data $db_dir/$db/current/ $scratch/$db";
+	system($cmd)==0 or die "Error exectuting $cmd: $!";   
+    }
+}
