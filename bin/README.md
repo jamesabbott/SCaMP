@@ -13,6 +13,24 @@ This is a set of scripts for analysis of metagenomic samples.
   * qc_trim.pl - quality trims reads and runs fastqc on trimmed data
   * human_filter.pl - Removes reads mapping to the human genome from the data
 
+Database Formats
+================
+
+Each database used by these scripts requires the following:
+
+1. A fasta formatted sequence of sequences, named 'database.fa'
+2. A fasta index,generatd with 'samtools faidx' ('database.fa.fai')
+2. BWA indices appropriate for searching with BWA MEM
+3. A tab-delimited file ('database.tax.dat') relating taxonomy data to each sequence:
+   The format should be as follows:
+
+Accession   Scientific name  Strain  NCBI TaxId
+i.e.
+
+chr1    Homo sapiens            9606
+
+This example has no strain defined, so this field is simply left blank
+
 
 Overall Workflow for carrying out metagenomic analysis
 ======================================================

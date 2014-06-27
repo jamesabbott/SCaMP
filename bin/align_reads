@@ -72,17 +72,28 @@ use File::Copy;
 use File::Path qw(remove_tree);
 use Carp qw(croak);
 use FindBin;
+use Parallel::ForkManager;
+
+my $samtools   = "/usr/biosoft/cluster/samtools/current/samtools";
+my $bwa        = "/usr/biosoft/cluster/bwa/current/bwa";
+my $picard_dir = "/usr/biosoft/cluster/picard/current/";
 
 {
 
     my $task;
-    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 0 );
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
     print "\nTask is $task\n";
     print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
 
-    my %dbs = ( 'human' => '/reference_data/Homo_sapiens/v38_p0/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna', );
+    my %dbs = (
+                'human' => '/local_scratch/florinash_dbs/human/human',
+                'viral' => '/local_scratch/florinash_dbs/ncbi_viral_genomes/ncbi_viral_genomes',
+                'plants' => '/local_scratch/florinash_dbs/ensembl_plants/ensembl_plants',
+                'parasites' => '/local_scratch/florinash_dbs/parasites/parasites',
+              );
 
-    my ( $in_dir, $out_dir, $db_name, $filter, $help, $man );
+    my ( $in_dir, $out_dir, $db_name, $filter, $help, $man, %tax_info, %tax_ids );
     GetOptions(
                 'in_dir=s'  => \$in_dir,
                 'out_dir=s' => \$out_dir,
@@ -90,12 +101,24 @@ use FindBin;
                 'filter'    => \$filter,
               );
 
-    my $ref_db = $dbs{$db_name} if ($db_name);
+    my $ref_db  = $dbs{$db_name} if ($db_name);
+    my $tax_dat = $ref_db . '.taxid.dat';
 
     croak "\nUnknown argument: @ARGV" if "@ARGV";
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1, message => \&show_dbs( \%dbs ) )
       if ( $help || !$in_dir || !$out_dir || !$ref_db );
+
+    # Read taxonomic breakdown of references into tax_info
+    open TAX_DAT, $tax_dat or die "Error opening $tax_dat: $!";
+    while ( my $tax = <TAX_DAT> ) {
+	    next if ($tax=~/^#/);
+            my @fields = split( /\t/, $tax );
+	    chomp $fields[3];
+            $tax_info{ $fields[0] } = $tax;
+	    $tax_ids{ $fields[3] } = $fields[1];
+    }
+    close TAX_DAT;
 
     croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
 
@@ -106,7 +129,7 @@ use FindBin;
     die "Incorrect number of samples ... task id = $task;
         sample number = $#samples \n " if ( $#samples < $task );
 
-    my $sample = $samples[$task];
+    my $sample = $samples[ $task - 1 ];
     chomp $sample;
     print "\nSample $sample will be filtered against $db_name database...\n" if ($filter);
 
@@ -133,39 +156,20 @@ use FindBin;
     copy( "$in_dir/$sample/$pair1", "$scratch_dir" ) or die "$pair1 Sample copy failed: $!";
     copy( "$in_dir/$sample/$pair2", "$scratch_dir" ) or die "$pair2 Sample copy failed: $!";
 
-    my $cmd = "/usr/biosoft/cluster/bwa/current/bwa mem -t 8 -M $ref_db $scratch_dir/$pair1 $scratch_dir/$pair2 |"
-      . " /usr/biosoft/cluster/samtools/current/samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
+    my $cmd = "$bwa mem -t 8 -M $ref_db $scratch_dir/$pair1 $scratch_dir/$pair2 |"
+      . " $samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
     system($cmd) == 0 or die "Error executing bwa: $!";
 
     # bwa mem seems not to write an eof correctly, so lets fix that...
-    $cmd = $FindBin::Bin . "/bam_add_eof.py $scratch_dir/$sample.$db_name.bam";
+    $cmd = "/data/florinash/bin/bam_add_eof.py $scratch_dir/$sample.$db_name.bam";
     system($cmd) == 0 or die "Error executing bwa: $!";
 
     if ($filter) {
-
-        # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
-        # therefore we want those with 0x0012 (12), where both apply...
-        $cmd = "/usr/biosoft/cluster/samtools/current/samtools view -b -f 12 -F 256 $scratch_dir/$sample.$db_name.bam"
-          . " > $scratch_dir/$sample.$db_name.unaligned.bam";
-        system($cmd) == 0 or die "Error executing bwa: $!";
-
-        $cmd =
-            "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SamToFastq.jar "
-          . "INPUT=$scratch_dir/$sample.$db_name.unaligned.bam FASTQ=$scratch_dir/$sample"
-          . ".$db_name.filtered_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
-          . ".$db_name.filtered_2.fq";
-        system($cmd) == 0 or die "Error executing command: $!";
-
-        foreach my $fastq ( $sample . ".$db_name.filtered_1.fq", $sample . ".$db_name.filtered_2.fq" ) {
-            my $cmd = "gzip $scratch_dir/$fastq";
-            system($cmd) == 0 or die "Error executing command: $cmd";
-            copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
-              or die "Error copying $fastq.gz: $!";
-        }
+	filter_bam($scratch_dir, $out_dir, $db_name, \%tax_info, \%tax_ids, $sample);
     }
     else {
         $cmd =
-            "/usr/bin/java  -Xmx4G -jar /usr/biosoft/cluster/picard/current/SortSam.jar "
+            "/usr/bin/java  -Xmx4G -jar $picard_dir/SortSam.jar "
           . "INPUT=$scratch_dir/$sample.$db_name.bam OUTPUT=$scratch_dir/$sample.$db_name.sorted.bam "
           . "SORT_ORDER=coordinate CREATE_INDEX=true";
         system($cmd) == 0 or die "Error executing command: $!";
@@ -174,7 +178,7 @@ use FindBin;
         copy( "$scratch_dir/$sample.$db_name.sorted.bai", "$out_dir/$sample/$sample.$db_name.bai" )
           or die "Error copying $sample.$db_name.sorted.bai:$!";
         my ( $mapped, $paired );
-        open FLAGSTAT, "/usr/biosoft/cluster/samtools/current/samtools flagstat $scratch_dir/$sample.$db_name.bam|"
+        open FLAGSTAT, "$samtools flagstat $scratch_dir/$sample.$db_name.bam|"
           or die "Error opening piped filehandle: $!";
         while (<FLAGSTAT>) {
             $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
@@ -182,7 +186,7 @@ use FindBin;
         }
         close FLAGSTAT;
 
-        open REPORT, ">$out_dir/$sample/$sample.mapping_report.txt"
+        open REPORT, ">$out_dir/$sample/$sample.$db_name.mapping_report.txt"
           or die "Error opening $out_dir/$sample/$sample.$db_name.mapping_report.txt:$!";
         print REPORT "Mapping Report: $sample vs $db_name\n";
         print REPORT "Mapped Reads: $mapped\n";
@@ -198,6 +202,7 @@ use FindBin;
             print "$error\n";
         }
     }
+
 }
 
 ######################################################################
@@ -223,3 +228,114 @@ sub show_dbs {
 }
 
 ######################################################################
+#
+# filter_bam
+# 
+# filters bam output to extract unaligned reads, while generating
+# summaries of taxonimic distribution of aligned reads, and a list of 
+# filtered reads
+#
+# required params:
+# 
+# returns:  0 on success
+# 
+######################################################################
+
+sub filter_bam {
+
+	my $scratch_dir = shift;
+	my $out_dir = shift;
+	my $db_name = shift;
+	my $tax_info = shift;
+	my $tax_ids = shift;
+	my $sample = shift;
+
+        # Build new fastq files of unaligned reads:
+        # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
+        # therefore we want those with 0x0012 (12), where both apply...
+        my $cmd = "$samtools view -b -f 12 -F 256 $scratch_dir/$sample.$db_name.bam"
+          . " > $scratch_dir/$sample.$db_name.unaligned.bam";
+        system($cmd) == 0 or die "Error executing bwa: $!";
+
+	# Extract fastq format unaligned reads from unaligned.bam
+        $cmd =
+            "/usr/bin/java  -Xmx4G -XX:MaxPermSize=256m -jar $picard_dir/SamToFastq.jar "
+          . "INPUT=$scratch_dir/$sample.$db_name.unaligned.bam FASTQ=$scratch_dir/$sample"
+          . ".$db_name.filtered_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
+          . ".$db_name.filtered_2.fq";
+        system($cmd) == 0 or die "Error executing command: $!";
+
+	# compress generated fastq files...
+        my $pm = new Parallel::ForkManager(2);
+        foreach my $fastq ( $sample . ".$db_name.filtered_1.fq", $sample . ".$db_name.filtered_2.fq" ) {
+            $pm->start and next();
+            my $cmd = "gzip $scratch_dir/$fastq";
+            system($cmd) == 0 or die "Error executing command: $cmd";
+            copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
+              or die "Error copying $fastq.gz: $!";
+            $pm->finish();
+        }
+        $pm->wait_all_children();
+
+        # Extract aligned reads for taxonomic categorisation:
+        $cmd =
+          "$samtools view -b -f 2 $scratch_dir/$sample.$db_name.bam" . " > $scratch_dir/$sample.$db_name.aligned.bam";
+        system($cmd) == 0 or die "Error executing bwa: $!";
+
+        # store hit counts vs each reference sequence and tax_id
+        my %ref_counts = ();
+	my %tax_counts = ();
+        open SAMTOOLS, "$samtools view $scratch_dir/$sample.$db_name.aligned.bam|"
+          or die "Error opening piped filehandle: $!";
+        while ( my @fields = split( /\t/, <SAMTOOLS> ) ) {
+            $ref_counts{ $fields[2] }++;
+	    my $tax_id = (split(/\t/,$tax_info->{$fields[2]}))[3];
+	    chomp($tax_id);
+	    $tax_counts{$tax_id}++;
+        }
+        close SAMTOOLS;
+
+        my ( $mapped, $paired );
+        open FLAGSTAT, "$samtools flagstat $scratch_dir/$sample.$db_name.aligned.bam|"
+          or die "Error opening piped filehandle: $!";
+        while (<FLAGSTAT>) {
+            $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
+        }
+        close FLAGSTAT;
+
+        open REPORT, ">$scratch_dir/$sample.$db_name.mapping_report.txt"
+          or die "Error opening $scratch_dir/$sample.$db_name.mapping_report.txt: $!";
+        print REPORT "Filtering Report: $sample vs $db_name\n";
+        print REPORT "Filtered Reads: $mapped\n";
+	print REPORT "\n#Taxonomic Summary\n";
+	print REPORT "##Tax ID\tSpecies\tAligned Reads\n";
+	    foreach my $tax(sort { $tax_counts{$b} <=> $tax_counts{$a} } keys(%tax_counts)) {
+	    print REPORT "$tax\t" . $tax_ids->{$tax} . "\t$tax_counts{$tax}\n";
+	}
+        print REPORT "\n##Aligned Reads\tAccession\tSpecies\tSubspecies\tNCBI TaxId\n";
+        foreach my $ref ( sort { $ref_counts{$b} <=> $ref_counts{$a} } keys(%ref_counts) ) {
+            my $tax_data = $tax_info->{$ref};
+            chomp($tax_data);
+            print REPORT "$ref_counts{$ref}\t$tax_data\n";
+        }
+        close REPORT;
+        copy( "$scratch_dir/$sample.$db_name.mapping_report.txt",
+              "$out_dir/$sample/$sample.$db_name.mapping_report.txt" )
+          or die "Error copying $sample.$db_name.mapping_report.txt: $!";
+
+        # create a list of filtered read IDs...
+        open READIDS, ">$scratch_dir/$sample.$db_name.filtered_reads.txt"
+          or die "Error opening $scratch_dir/$sample.$db_name.filtered_reads.txt:$!";
+        open SAMTOOLS, "$samtools view $scratch_dir/$sample.$db_name.aligned.bam|"
+          or die "Error opening piped filehandle: $!";
+        while ( my $id = ( split( /\t/, <SAMTOOLS> ) )[0] ) {
+            print READIDS "$id\n";
+        }
+        close SAMTOOLS;
+        close READIDS;
+        copy( "$scratch_dir/$sample.$db_name.filtered_reads.txt", "$out_dir/$sample/$sample.$db_name.filtered_reads.txt" )
+          or die "Error copying $sample.$db_name.mapped_reads.txt: $!";
+
+    return(0);
+
+}

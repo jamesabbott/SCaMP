@@ -1,0 +1,576 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+=pod
+
+=head1 NAME
+
+    build_ref_db
+
+=head1 SYNOPSIS
+
+    build_ref_db --db [db_name] --out_dir /path/to/output_dir --in_dir /path_to_input_dir --format [embl|genbank]
+
+=head1 DESCRIPTION
+
+    Creates a reference database for use by align_reads. 
+    
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should genome records in EMBL or GENBANK formats
+
+=item B<out_dir>: Path to write output files 
+
+=item B<db>: name to assign to database
+
+=item B<format>: Format of input files - genbank or embl
+
+=back
+
+=over 4
+
+=head1 OPTIONAL ARGUMENTS
+
+=item B<download>: Download database from defined configuration
+
+=item B<in_dir>: Location of database to format - only used if download argument not specified
+
+=item B<help>: Display help text
+
+=item B<man>: Display manual page
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use File::Path qw(rmtree);
+use Bio::SeqIO;
+use Bio::DB::EUtilities;
+use YAML::XS qw(Load);
+use Net::FTP::Recursive;
+use Parallel::ForkManager;
+use DateTime;
+
+{
+
+    my ( $format, $db, $in_dir, $help, $man, $db_data );
+    my $download = 0;
+    GetOptions(
+                'db:s'     => \$db,
+                'format:s' => \$format,
+                'download' => \$download,
+                'in_dir:s' => \$in_dir,
+                'help'     => \$help,
+                'man'      => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$db );
+
+    my $bwa     = "/usr/biosoft/packages/bwa/current/bwa";
+    my $dir     = "/data/florinash/reference_data/";
+    my $dt      = DateTime->now();
+    my $date    = $dt->ymd();
+    my $out_dir = $dir . $db . "/$date";
+    $in_dir = $dir . $db . "/" . $date . "/raw_data" if ($download);
+
+    mkdir $out_dir or croak "Error creating $out_dir: $!" unless ( -d $out_dir );
+    rmtree("$out_dir/split") if ( -d "$out_dir/split" );
+    mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
+
+    my $yaml = do { local $/; <DATA> };
+    my $yaml_data = Load($yaml);
+    foreach my $db_name ( keys %{$yaml_data} ) {
+        $db_data = $yaml_data->{$db_name} if ( $db_name eq $db );
+    }
+
+    if ( !$format ) {
+        foreach my $val (@$db_data) {
+            if ( $val->{'format'} ) {
+                $format = $val->{'format'};
+            }
+        }
+    }
+
+    $in_dir = download( $db, $db_data, $in_dir,$date ) if ($download);
+    uncompress($in_dir) if ($download);
+    reformat( $db, $format, $in_dir, $out_dir );
+
+    print "\nBuilding BWA index...\n";
+    my $cmd = "$bwa index $out_dir/$db";
+    system($cmd)==0 or die "Error executing $cmd:$!";
+
+}
+
+######################################################################
+#
+# download
+#
+# downloads a database defined in YAML configuration into
+# $dir...
+#
+# required params: $ (db_name)
+#                  $ (hashref of dbdata)
+#                  $ (base dir to write database)
+#
+# returns:         $ (path database written to)
+#
+######################################################################
+
+sub download {
+
+    my $db      = shift;
+    my $db_data = shift;
+    my $dir     = shift;
+    my $date = shift;
+
+    my $path;
+
+    foreach my $dat (@$db_data) {
+        if ( $dat->{'type'} && $dat->{'type'} eq 'ftp' ) {
+            print "\nDownloading $db via ftp...\n";
+            $path = ftp_download( $db, $db_data, $dir,$date );
+        }
+        elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez' ) {
+            print "\nDownloading $db via entrez...\n";
+            $path = entrez_download( $db, $db_data, $dir );
+        }
+        elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez_accessions' ) {
+            print "\nDownloading $db via entrez accessions...\n";
+            $path = entrez_accession_download( $db, $db_data, $dir );
+        }
+    }
+    return ($path);
+}
+
+######################################################################
+#
+# ftp_download
+#
+# Downloads database via ftp...
+#
+# required params: $ (db name)
+#                  $ (hasref of dbdata)
+#                  $ (base dir to write database to)
+#                  $ (date)
+#
+# returns:         $ (path database written to)
+#
+######################################################################
+
+sub ftp_download {
+
+    my $db      = shift;
+    my $db_data = shift;
+    my $dir     = shift;
+    my $date = shift;
+
+    my ( $ftp_host, $ftp_dir, $file_pattern, $format );
+    foreach my $val (@$db_data) {
+        if ( $val->{'ftphost'} ) {
+            $ftp_host = $val->{'ftphost'};
+        }
+        elsif ( $val->{'ftpdir'} ) {
+            $ftp_dir = $val->{'ftpdir'};
+        }
+        elsif ( $val->{'file_pattern'} ) {
+            $file_pattern = $val->{'file_pattern'};
+        }
+        elsif ( $val->{'format'} ) {
+            $format = $val->{'format'};
+        }
+    }
+
+    rmtree($dir) if ( -d $dir );
+    mkdir($dir) or die "Error creating $dir: $!";
+
+    my $ftp = Net::FTP::Recursive->new( $ftp_host, Passive => 1, Debug => 1, Timeout => 480 )
+      or die "Cannot connect to $ftp_host:$!";
+    $ftp->login( "anonymous", 'bsshelp@imperial.ac.uk' ) or die "Cannot login: " . $ftp->message;
+    $ftp->binary();
+    $ftp->cwd($ftp_dir) or die "Cannot chdir to ftp_dir: " . $ftp->message;
+
+    my $rem_dir = $ftp->pwd();
+
+    # this will only work with ensembl format databases...
+    my $release;
+
+    if ( $rem_dir =~ /release-([0-9]+)/ ) {
+	$release = $1;
+    } else {
+	$release = $date;
+    }
+    
+    #die "Could not parse release version from $rem_dir" unless ($release);
+
+    mkdir("$dir/$release") or croak "Could not mkdir $dir/$release: $!" if ( !-d "$dir/$release" );
+    chdir("$dir/$release") or croak "Could not chdir to $dir/$release:$!";
+    $file_pattern=~s/_release_/$release/;
+    $ftp->rget( MatchFiles => $file_pattern, FlattenTree => 1 );
+
+    return ("$dir/$release");
+
+}
+
+######################################################################
+#
+# entrez_download
+#
+# Downloads specified database via entrez
+#
+# required params: $ (db name)
+#                  $ (hasref of dbdata)
+#                  $ (base dir to write database to)
+#
+# returns:         $ (path database written to)
+#
+######################################################################
+
+sub entrez_download {
+
+    my $db      = shift;
+    my $db_data = shift;
+    my $dir     = shift;
+
+    my ( $query, $format );
+    foreach my $val (@$db_data) {
+        if ( $val->{'entrez_query'} ) {
+            $query = $val->{'entrez_query'};
+        }
+        elsif ( $val->{'format'} ) {
+            $format = $val->{'format'};
+        }
+    }
+
+    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'`;
+
+    rmtree($dir) if ( -d $dir );
+    mkdir($dir) or die "Error creating $dir: $!";
+
+    my $factory = Bio::DB::EUtilities->new(
+                                            -eutil      => 'esearch',
+                                            -email      => $email,
+                                            -db         => 'nuccore',
+                                            -term       => $query,
+                                            -usehistory => 'y'
+                                          );
+
+    my $count = $factory->get_count;
+    my $hist = $factory->next_History || die 'No history data returned';
+    $factory->set_parameters(
+                              -eutil   => 'efetch',
+                              -rettype => 'gb',
+                              -history => $hist
+                            );
+
+    my $retry = 0;
+    my ( $retmax, $retstart ) = ( 500, 0 );
+
+    open( my $out, '>', "$dir/$db.gb" ) || die "Can't open file:$!";
+
+  RETRIEVE_SEQS:
+    while ( $retstart < $count ) {
+        $factory->set_parameters( -retmax   => $retmax,
+                                  -retstart => $retstart );
+        eval {
+            $factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
+        };
+        if ($@) {
+            die "Server error: $@.  Try again later" if $retry == 5;
+            print STDERR "Server error, redo #$retry\n";
+            $retry++ && redo RETRIEVE_SEQS;
+        }
+        $retstart += $retmax;
+    }
+
+    close $out;
+
+    return ($dir);
+}
+
+######################################################################
+#
+# entrez_accession_download
+#
+# Downloads specified database via entrez
+#
+# required params: $ (db name)
+#                  $ (hasref of dbdata)
+#                  $ (base dir to write database to)
+#
+# returns:         $ (path database written to)
+#
+######################################################################
+
+sub entrez_accession_download {
+
+    my $db      = shift;
+    my $db_data = shift;
+    my $dir     = shift;
+
+    my ( $query, $format, $accessions );
+    foreach my $val (@$db_data) {
+        if ( $val->{'entrez_query'} ) {
+            $query = $val->{'entrez_query'};
+        }
+        elsif ( $val->{'format'} ) {
+            $format = $val->{'format'};
+        }
+        elsif ( $val->{'accessions'} ) {
+            $accessions = $val->{'accessions'};
+        }
+    }
+
+    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'`;
+
+    rmtree($dir) if ( -d $dir );
+    mkdir($dir) or die "Error creating $dir: $!";
+
+    my $factory = Bio::DB::EUtilities->new(
+                                            -eutil   => 'efetch',
+                                            -db      => 'nucleotide',
+                                            -rettype => 'gb',
+                                            -email   => $email,
+                                            -id      => $accessions
+                                          );
+
+    my $file = "$dir/$db.gb";
+    $factory->get_Response( -file => $file );
+
+    my $seqin = Bio::SeqIO->new( -file   => $file,
+                                 -format => 'genbank' );
+
+    while ( my $seq = $seqin->next_seq ) {
+
+        # do whatever....
+        print "Retrieving ", $seq->display_id(), "...\n";
+        my $anno_collection = $seq->annotation;
+        my @wgs             = $anno_collection->get_Annotations('wgs');
+        my @wgs_accessions;
+        foreach my $wgs (@wgs) {
+            if ( $wgs->tagname eq 'wgs' ) {
+                my ( $start, $end ) = split( /-/, $wgs->value );
+                my $prefix = $1 if ( $start =~ /^([A-Z]{4})/ );
+                $start =~ s/$prefix//;
+                $end   =~ s/$prefix//;
+                $start =~ s/^0+//;
+                $end   =~ s/^0+//;
+                for ( my $i = $start ; $i <= $end ; $i++ ) {
+		    my ($acc);
+		    if (length($start)==8) {
+			$acc = sprintf( "%s%09s", $prefix, $i );
+		    } elsif (length($start)==7) {
+			$acc = sprintf( "%s%08s", $prefix, $i );
+		    } else {
+			croak "Unhandled accession length: $wgs->value()";
+		    }
+                    push @wgs_accessions, $acc;
+                }
+            }
+        }
+	# retreive sequences in batches of 500....
+	    my $retry = 0;
+	    my ( $retmax, $retstart ) = ( 500, 0 );
+        my $file = "$dir/$db." . $seq->display_id . ".gb";
+
+	open( my $out, '>', "$file" ) || die "Can't open file:$!";
+
+  RETRIEVE_SEQS:
+    while ( $retstart < $#wgs_accessions) {
+	my @query_accs = @wgs_accessions[$retstart..($retstart+($retmax-1))];
+	print "\tGetting accessions $retstart -> " . ($retstart+($retmax-1)) . "....\n";
+        my $wgs_factory = Bio::DB::EUtilities->new(
+                                                    -eutil   => 'efetch',
+                                                    -db      => 'nucleotide',
+                                                    -rettype => 'gb',
+                                                    -email   => $email,
+                                                    -id      => \@query_accs,
+                                                  );
+        eval {
+            $wgs_factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
+        };
+        if ($@) {
+            die "Server error: $@.  Try again later" if $retry == 5;
+            print STDERR "Server error, redo #$retry\n";
+            $retry++ && redo RETRIEVE_SEQS;
+        }
+        $retstart += $retmax;
+    }
+
+    close $out;
+    }
+    return ($dir);
+}
+
+######################################################################
+#
+# uncompress
+#
+# uncompresses downloaded files...as long as they are gzipped!
+#
+# required params: $ (path to uncompress files in)
+#
+# returns: none
+#
+######################################################################
+
+sub uncompress {
+
+    my $dir = shift;
+
+    print "\nUncompressing...\n";
+
+    chdir $dir or die "Could not chdir to $dir:$!";
+    opendir DIR, $dir or die "Could not open $dir:$!";
+    my @files = grep /gz$/, readdir DIR;
+    close DIR;
+
+    my $pm = new Parallel::ForkManager(4);
+    foreach my $file (@files) {
+        $pm->start and next();
+        my $cmd = "/usr/bin/gunzip $dir/$file";
+        system($cmd) == 0 or die "Error executing $cmd:$!";
+        $pm->finish;
+    }
+    $pm->wait_all_children();
+}
+
+######################################################################
+#
+# reformat
+#
+# Converts to fasta and builds taxonomy lookup table
+#
+# required params:
+#
+# returns: $
+#
+######################################################################
+
+sub reformat {
+
+    my $db      = shift;
+    my $format  = shift;
+    my $in_dir  = shift;
+    my $out_dir = shift;
+
+    opendir IN, $in_dir or croak "Error opening $in_dir:$ !";
+    my @in_files = grep !/\.\.?\z/, readdir IN;
+    close IN;
+
+    print "\nConverting $db to fasta format...\n\n";
+    my $pm = new Parallel::ForkManager(8);
+    foreach my $in_file (@in_files) {
+        $pm->start and next();
+        my $inIO = Bio::SeqIO->new( -format => $format, -file => "$in_dir/$in_file" );
+        my $out_file = $in_file;
+        $out_file .= ".$$.fasta";
+
+        my $outIO = Bio::SeqIO->new( -format => 'fasta', -file => ">$out_dir/split/$out_file" );
+        my $tax_out = $out_dir . "/split/" . "$db.$in_file.$$.taxid.dat";
+        open TAXOUT, ">$tax_out" or die "Error opening $tax_out: $!";
+        print TAXOUT "##Accession\tSpecies\tStrain\tNCBI Tax Id\n";
+        while ( my $record = $inIO->next_seq() ) {
+            my ( $species, $sub_species, $tax_id );
+            $sub_species = "";
+            $species     = $record->species->binomial();
+            $sub_species = $record->species->sub_species() if ( $record->species->sub_species() );
+            $tax_id      = $record->species->ncbi_taxid();
+
+            #prepend accession with tax_id since ensembl etc. aren't necessarily unique...
+            $record->display_id( $tax_id . "_" . $record->display_id );
+
+            print TAXOUT $record->display_id(), "\t", $species, "\t", $sub_species, "\t", $tax_id, "\n";
+            $outIO->write_seq($record);
+        }
+        close TAXOUT;
+        $pm->finish();
+    }
+    $pm->wait_all_children();
+
+    print "\nMerging fasta files...\n";
+    opendir DIR, "$out_dir/split" or die "Error opening $out_dir: $!";
+    my @fastas = grep /fasta$/, readdir DIR;
+    rewinddir DIR;
+    my @tax = grep /taxid.dat$/, readdir DIR;
+    close DIR;
+
+    my $outIO = Bio::SeqIO->new( -format => 'fasta', -file => ">$out_dir/$db" );
+    foreach my $fasta (@fastas) {
+        my $inIO = Bio::SeqIO->new( -format => 'fasta', -file => "$out_dir/split/$fasta" );
+        while ( my $seq = $inIO->next_seq() ) {
+            $outIO->write_seq($seq);
+        }
+        unlink "$out_dir/split/$fasta" or croak "Error removing $out_dir/split/$fasta: $!";
+    }
+
+    print "\nMerging tax.dat files...\n";
+    open TAX, ">$out_dir/$db.taxid.dat\n";
+    foreach my $tax (@tax) {
+        open IN, "$out_dir/split/$tax" or croak "Error opening $out_dir/split/$tax: $!";
+        while (<IN>) {
+            print TAX $_;
+        }
+        close IN;
+        unlink "$out_dir/split/$tax" or croak "Error removing $out_dir/split/$tax: $!";
+    }
+    close TAX;
+
+    rmdir "$out_dir/split" or croak "Error removing $out_dir/split: $!";
+
+}
+
+__DATA__
+ensembl_plants:
+  - type: ftp
+  - ftphost: ftp.ensemblgenomes.org
+  - ftpdir: /pub/plants/current/embl
+  - file_pattern: _release_.dat.gz$
+  - format: embl
+ncbi_viral_genomes:
+  - type: entrez
+  - format: genbank
+  - entrez_query: '"Viruses"[Organism] AND srcdb_refseq[PROP] NOT "cellular organisms"[Organism] NOT AC_000001[PACC] : AC_999999[PACC]'
+parasites:
+  - type: entrez_accessions
+  - format: genbank
+  - accessions:
+    - CABX00000000.1
+    - BX526834.1
+    - AAEE00000000.1
+    - AAEL00000000.2
+    - AAFB00000000.2
+    - ACGJ00000000.1
+    - AACB00000000.2
+    - CBLN000000000.1
+    - CBLO000000000.1
+    - ABIR00000000.2
+    - CBXK000000000.1
+patric:
+  - type: ftp
+  - ftphost: ftp.patricbrc.org
+  - ftpdir: /patric2/genomes
+  - file_pattern: RefSeq.gbf$
+  - format: genbank
+
