@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+
+# Script for running filter against ensembl plants database
+# Due to the index size, this is innapropriate for running
+# on the cluster, hence this script just runs a series of
+# jobs on codon
+
+for i in {1..73};
+do
+    export SGE_TASK_ID=${i}
+    /data/florinash/bin/align_reads --in_dir=/data/florinash/filtered/parasites --out_dir=/data/florinash/filtered/plants --db plants --filter 2>&1 |tee plant_filter.${i}.out
+done
+
