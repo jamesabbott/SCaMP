@@ -126,8 +126,8 @@ my $picard_dir = "/usr/biosoft/cluster/picard/current/";
     my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
     close DIR;
 
-    die "Incorrect number of samples ... task id = $task;
-        sample number = $#samples \n " if ( $#samples < $task );
+    #die "Incorrect number of samples ... task id = $task;
+    #    sample number = $#samples \n " if ( $#samples $task );
 
     my $sample = $samples[ $task - 1 ];
     chomp $sample;

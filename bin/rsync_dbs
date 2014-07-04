@@ -21,11 +21,13 @@ use strict;
     mkdir $scratch or die "Error creating $scratch: $!" if (!-d $scratch); 
     
     my @dbs = qw(
-	human ncbi_viral_genomes ensembl_plants parasites
+	human ncbi_viral_genomes parasites
     );
 
     foreach my $db(@dbs) {
 	my $cmd = "/usr/bin/rsync -av --delete --exclude raw_data $db_dir/$db/current/ $scratch/$db";
 	system($cmd)==0 or die "Error exectuting $cmd: $!";   
     }
+    my $cmd = "/usr/bin/rsync -av --delete /usr/biosoft/cluster/MetaPhlAn/current/bowtie2db/* $scratch/metaphlan_bowtie2db";
+	system($cmd)==0 or die "Error exectuting $cmd: $!";   
 }
