@@ -1,0 +1,152 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=08:00:00,h_vmem=2G
+#$ -t 1-73
+
+=pod
+
+=head1 NAME
+
+    metaplhan_classify
+
+=head1 SYNOPSIS
+
+    metaphlan_classify --out_dir /path/to/output_dir --in_dir /path_to_input_dir 
+
+=head1 DESCRIPTION
+
+    Cluster wrapper for running MetaPhlAn against each sample in a dataset. Requires environment modules 'MetaPhlAn' module to setup environment correctly
+    
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should contains one subdirectory-per-sample, containing the read-pairs as compressed fastq files
+
+=item B<out_dir>: Path to write output files 
+
+=back
+
+=head1 OPTIONAL ARGUMENTS
+
+=over 4
+
+=item B<help>: Display help text
+
+=item B<man>: Display manual page
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+$ENV{'PERL_MODULECMD'} = '/usr/bin/modulecmd';
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use Carp qw(croak);
+use Env::Modulecmd qw(MetaPhlAn);
+
+{
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $in_dir, $out_dir, $help, $man );
+    my $db = "/local_scratch/florinash_dbs/metaphlan_bowtie2db/mpa";
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+                'out_dir=s' => \$out_dir,
+                'help'      => \$help,
+                'man'       => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in_dir || !$out_dir );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task - 1 ];
+    chomp $sample;
+    print "\nSample $sample will be classified with MetaPhlAn...\n";
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$in_dir/$sample/" or die "Could not open $in_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $errors;
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( -d $scratch_dir ) {
+        print "\nRemoving old scratch directory: $scratch_dir...\n";
+        remove_tree( $scratch_dir, { error => \$errors } );
+        if (@$errors) {
+            print "Errors occurred removing $scratch_dir: \n\n";
+            foreach my $error (@$errors) {
+                print "$error\n";
+            }
+        }
+    }
+    mkdir $scratch_dir or die "mkdir failed: $!";
+    chdir $scratch_dir or die "chdir failed: $!";
+
+    my $cmd = "/usr/bin/gunzip -c $in_dir/$sample/$pair1 $in_dir/$sample/$pair2 | gzip > $scratch_dir/$sample.fastq.gz";
+    system("$cmd") == 0 or croak "Error merging gzipped read files; $!";
+
+    $cmd =
+"metaphlan.py --bowtie2db $db --bt2_ps very-sensitive --input_type multifastq --nproc 8 -biom $scratch_dir/$sample.biom $scratch_dir/$sample.fastq.gz $scratch_dir/$sample.txt";
+    system("$cmd") == 0 or croak "Error running $cmd; $!";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    copy( "$scratch_dir/$sample.biom", "$out_dir/$sample/$sample.biom" )
+      or croak "Error copying $scratch_dir/$sample.biom: $!";
+    copy( "$scratch_dir/$sample.txt", "$out_dir/$sample/$sample.txt" )
+      or croak "Error copying $scratch_dir/$sample.txt: $!";
+
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+
+}
+
