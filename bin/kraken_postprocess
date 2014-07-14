@@ -15,8 +15,6 @@
 # $Revision$
 # $Date$
 #
-# Script for running kraken - assumes database is preloaded in /ramdisk
-#
 ######################################################################
 
 =head1 NAME
