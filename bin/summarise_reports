@@ -67,7 +67,7 @@ use Carp qw(croak);
 
     my $dir = "/data/florinash/";
     my $fastq_dir = "trimmed";
-    my @filter_dirs = qw(human parasites viral);
+    my @filter_dirs = qw(human parasites viral plants);
 
     opendir FASTQ, "$dir$fastq_dir" or die "Error opening $dir$fastq_dir: $!";
     my @samples = grep !/\.\.?\z/, readdir FASTQ;
@@ -96,6 +96,7 @@ use Carp qw(croak);
 	$sheet->write(1,1, $read_count);
 	
 	foreach my $filter(@filter_dirs) {
+	if (-e "$dir/filtered/$filter/$sample/$sample.$filter.mapping_report.txt") {
 	    open REPORT, "$dir/filtered/$filter/$sample/$sample.$filter.mapping_report.txt" or die "Error opening $dir/filtered/$filter/$sample/$sample.$filter.mapping_report.txt: $!";
 	    if ($filter eq 'human') {
 		my $filtered;
@@ -134,14 +135,14 @@ use Carp qw(croak);
 		    }
 		}
 
-		
+	    }		
 			
 	    }
 	    close REPORT;
 	    
-	}
 	
     }
+}
     $workbook->close;
     exit;
 
