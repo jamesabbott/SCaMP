@@ -1,0 +1,41 @@
+#!/bin/bash -ex
+
+# $HeadURL$
+# $Author$
+# $Revison$
+# $Date$
+
+# builds metavelvet-sl training set from all fasta records in ${genome_dir}
+
+metavelvet_dir=/usr/biosoft/packages/metavelvet/current
+genome_dir=/data/florinash/reference_data/simulation/fasta_genomes
+data_dir=/data/florinash/reference_data/simulation
+read_dir=${data_dir}/reads
+
+# meta-velvete will segfault if the stack isn't large enough...
+ulimit -s 40960
+export PERL5LIB=${metavelvet_dir}/LearningModelFeatures/BLAST_map:${PERL5LIB}
+
+for fasta in `ls ${genome_dir}/*fasta`;
+do
+    file=`basename ${fasta}`
+    echo ${file}
+    dwgsim -1 100 -2 100 -C 20 -d 300 -s 30 ${fasta} ${read_dir}/$file
+done;
+
+cat ${read_dir}/*read1.fastq >> /data/florinash/reference_data/simulation/read1.fastq
+cat ${read_dir}/*read2.fastq >> /data/florinash/reference_data/simulation/read2.fastq
+if [ -e ${data_dir}/all_genomes.fasta ]
+then
+  rm -v ${data_dir}/all_genomes.fasta
+fi
+
+cat ${genome_dir}/*fasta >> ${data_dir}/all_genomes.fasta
+
+velveth /data/florinash/reference_data/simulation/training 31 -shortPaired -fastq /data/florinash/reference_data/simulation/read1.fastq /data/florinash/reference_data/simulation/read2.fastq
+velvetg /data/florinash/reference_data/simulation/training -ins_length 300 -read_trkg yes -exp_cov auto
+${metavelvet_dir}/meta-velvete ${data_dir}/training -ins_length 300
+${metavelvet_dir}/LearningModelFeatures/BLAST_map/eval.pl -i ${data_dir}/training/meta-velvetg.subgraph__ChimeraNodeCandidates -n florinash -d ${data_dir}/all_genomes.fasta -p florinash -L 0
+${metavelvet_dir}/LearningModelFeatures/FeatureExtract.perl ${data_dir}/training/meta-velvetg.subgraph__TitleChimeraNodeCandidates florinash.long-scafs.blast ${data_dir}/training/Features3Class ${data_dir}/training/ChimeraTrue ${data_dir}/training/ChimeraNodeName
+/usr/biosoft/packages/libsvm/current/tools/easy.py ${data_dir}/training/Features3Class
+ 
