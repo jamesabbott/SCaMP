@@ -1,0 +1,151 @@
+#!/bin/env perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=08:00:00,h_vmem=4G
+#$ -t 1-73
+
+=pod
+
+=head1 NAME
+
+    assemble
+
+=head1 SYNOPSIS
+
+    assemble --in_dir /path/to/fastqs --out_dir /path/to/outputs 
+
+=head1 DESCRIPTION
+
+    Assembles filtered datasets using IDBA-UD. 
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should contain per-sample subdirectories, each containing paired (preferably gzipped) fastq reads. 
+
+=item B<out_dir>: Path to write output files (in per-sample subdirectories).
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use File::Copy::Recursive qw(dircopy);
+use Carp qw(croak);
+use FindBin;
+
+my $idba_dir = "/usr/biosoft/cluster/idba/current";
+{
+
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $in_dir, $out_dir, $help, $man );
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+                'out_dir=s' => \$out_dir,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 )
+      if ( $help || !$in_dir || !$out_dir );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task - 1 ];
+    chomp $sample;
+    print "Sample is $sample\n";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$in_dir/$sample/" or die "Could not open $in_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+
+    # copy fastq files for sample to local storage...
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( -d $scratch_dir ) {
+	print "Removing old scratch directory...\n";	
+	my $errors;
+	remove_tree( $scratch_dir, { error => \$errors } );
+	print "@$errors\n" if (@$errors);
+    }
+    mkdir $scratch_dir or die "mkdir failed: $!";
+    my $idba_out_dir = "$scratch_dir/idba_out";
+    if ( !-d $idba_out_dir ) {
+        mkdir $idba_out_dir or die "mkdir failed: $!";
+    }
+
+    copy( "$in_dir/$sample/$pair1", "$scratch_dir" ) or die "$pair1 Sample copy failed: $!";
+    copy( "$in_dir/$sample/$pair2", "$scratch_dir" ) or die "$pair2 Sample copy failed: $!";
+
+    foreach my $pair($pair1, $pair2) {
+	my $cmd = "gunzip $scratch_dir/$pair";
+	system($cmd)==0 or die "Error gunzip $pair: $!";
+    } 
+    
+    $pair1=~s/\.gz//;
+    $pair2=~s/\.gz//;
+
+    my $cmd = "$idba_dir/bin/fq2fa --merge $scratch_dir/$pair1 $scratch_dir/$pair2 $scratch_dir/merged.fa";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    $cmd = "$idba_dir/bin/idba_ud -o $idba_out_dir -r $scratch_dir/merged.fa --num_threads 8 --pre_correction";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    dircopy("$idba_out_dir", "$out_dir/$sample") or die "Error copying $idba_out_dir: $!";
+
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+
+    print "Completed ok...\n";
+
+}
