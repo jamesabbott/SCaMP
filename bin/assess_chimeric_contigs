@@ -1,0 +1,188 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+=pod
+
+=head1 NAME
+
+    assess_chimeric_contigs
+
+=head1 SYNOPSIS
+
+    assess_chimeric_contigs --bam [bamfile] --class [metaphlan bowtie2out.txt classification] [--help][--man]
+
+=head1 DESCRIPTION
+
+    Assesses chimeric contigs within as assembly based upon MetaPhlAn 
+    assignments to reads, and occurrence of reads withing contigs of assembly
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<bam>: Bam file of reads mapped to assembly 
+
+=item B<class>: MetaPhLan per-read classification (bowtie2out.txt file)
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+$|++;
+use Getopt::Long;
+use Pod::Usage;
+use File::Find::Rule;
+use Carp qw(croak);
+use Bio::DB::Sam;
+use Bio::DB::Taxonomy;
+use Bio::Tree::Tree;
+
+{
+
+    my ( $bam, $class, $help, $man );
+    GetOptions(
+                'bam=s'   => \$bam,
+                'class=s' => \$class,
+                'help'    => \$help,
+                'man'     => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 )
+      if ( $help || !$bam || !$class );
+
+    croak "$class file does not exist" unless ( -e $class );
+    croak "$bam file does not exist"   unless ( -e $bam );
+
+    my $report = $bam;
+    $report =~ s/bam/chimera.report/;
+
+    my $genus_dist = $bam;
+    $genus_dist =~ s/bam/genus.dist/;
+
+    my @sig_genus;
+
+    my $nodefile  = '/data/florinash/reference_data/taxonomy/nodes.dmp';
+    my $namesfile = '/data/florinash/reference_data/taxonomy/names.dmp';
+    my $idx_dir   = '/data/florinash/reference_data/taxonomy';
+
+    my $tax_db = new Bio::DB::Taxonomy(
+                                        -source    => 'flatfile',
+                                        -nodesfile => $nodefile,
+                                        -namesfile => $namesfile,
+                                        -directory => $idx_dir
+                                      );
+
+    my ( %clades, %reads );
+
+    print "\nReading clade mapping...";
+    my $clade_file = "/usr/biosoft/cluster/MetaPhlAn/current/metaphlan.markers2clade.caution.txt";
+    open CLADES, $clade_file or die "Error opening $clade_file: $!\n";
+    while (<CLADES>) {
+        chomp;
+        my ( $id, $clade ) = split( /\t/, $_ );
+        $clades{$id} = $clade;
+    }
+    close CLADES;
+    print "ok\n";
+
+    print "\nReading read classifications...";
+    open READS, $class or die "Error opening $class: $!";
+    while (<READS>) {
+        chomp;
+        my ( $id, $clade_id ) = split( /\t/, $_ );
+        $id =~ s/\/[12]$//;
+        $reads{$id} = $clade_id;
+    }
+    close READS;
+    print "ok\n";
+
+    open REPORT, ">$report" or die "Error opening $report: $!";
+    my $sam = Bio::DB::Sam->new( -bam => $bam );
+    my @contigs = $sam->seq_ids();
+
+    my $tree = Bio::Tree::Tree->new;
+    my ( $single_genus, $chimeric );
+    foreach my $contig (@contigs) {
+        print "\nContig = $contig\n";
+        my ( %tax, %genus_tax );
+        my $tot = 0;
+        my @features = $sam->get_features_by_location( -seq_id => $contig );
+        foreach my $feature (@features) {
+            my $clade_id = $reads{ $feature->query()->name() };
+            if ($clade_id) {
+                my $tax = $clades{$clade_id};
+                $tax{$tax}++;
+                $tot++;
+
+            }
+        }
+
+        # iterate through taxons and identify genus for each...
+      TAX: foreach my $tax ( keys(%tax) ) {
+
+            my $count = $tax{$tax};
+            $tax =~ s/^[sgfocp]__//;
+            die "Unparsed taxon: $tax" if ( $tax =~ /__/ );
+            $tax =~ s/_/ /;
+
+            my $tax_node = $tax_db->get_taxon( -name => $tax );
+            if ($tax_node) {
+                if ( $tax_node->rank eq 'family' || $tax_node->rank eq 'order' ) {
+                    $tot -= $count;
+                    next TAX;
+                }
+                else {
+                    while ( $tax_node && $tax_node->rank ne "genus" ) {
+                        $tax_node = $tax_node->ancestor();
+                        next TAX unless ($tax_node);
+                    }
+                    print $tax_node->rank(), "\t", $tax_node->node_name(), "\t$count\n";
+                    $genus_tax{ $tax_node->node_name } += $count;
+                }
+            }
+        }
+
+        # report on genus level association...
+        my $max_prop  = 0;
+        my $max_count = 0;
+        my $max_genus;
+	my $sig_genus = 0; # significant genus in contig
+        foreach my $genus ( keys(%genus_tax) ) {
+            my $score = $genus_tax{$genus} / $tot;
+            if ( $score > $max_prop ) {
+                $max_prop  = $score;
+                $max_genus = $genus;
+                $max_count = $genus_tax{$genus};
+            }
+	    if ( $score > 0.05) {
+		    $sig_genus++;
+		}
+        }
+        my $prop = sprintf( '%.2f%%', $max_prop * 100 );
+        print REPORT "$contig\t$max_genus\t$max_count\t$prop\n" if ($max_count>0);
+	$sig_genus[$sig_genus]++ if ($max_count>5);
+    }
+
+    close REPORT;
+
+    open DIST, ">$genus_dist" or die "Error opening $genus_dist: $!";
+    print DIST "@sig_genus\n";
+    close DIST;
+}
