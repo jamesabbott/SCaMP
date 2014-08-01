@@ -14,7 +14,7 @@
 #$ -m a
 #$ -pe smp 8
 #$ -R y
-#$ -l h_rt=08:00:00,h_vmem=4G
+#$ -l h_rt=12:00:00,h_vmem=12G
 #$ -t 1-73
 
 =pod
@@ -90,6 +90,7 @@ my $idba_dir = "/usr/biosoft/cluster/idba/current";
     chomp $sample;
     print "Sample is $sample\n";
 
+    if (!-e "$out_dir/$sample/contig.fa") {
     mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
     mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
 
@@ -147,5 +148,8 @@ my $idba_dir = "/usr/biosoft/cluster/idba/current";
     }
 
     print "Completed ok...\n";
+    } else {
+	print "Output $out_dir/contig.fa already exists...skipping...\n";
+    }
 
 }
