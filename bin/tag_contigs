@@ -1,0 +1,80 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+use Bio::SeqIO;
+use Getopt::Long;
+use Pod::Usage;
+use File::Find::Rule;
+use Carp qw(croak);
+
+=pod
+
+=head1 NAME
+
+    tag_contigs
+
+=head1 SYNOPSIS
+
+    tag_contigs --in_dir /path/to/assemblies 
+
+=head1 DESCRIPTION
+
+    Renames contigs within assemblies to include the sample name...
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of assemblies. This should contain one sub-directory per sample, which includes contigs in a file name contig.fa 
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in_dir, $help, $man);
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in_dir );
+    
+    croak "$in_dir does not exist" unless (-e $in_dir);
+
+    opendir ASSEMBLIES, $in_dir or croak "Error opening $in_dir: $!";
+    my @samples = grep !/\.\.?\z/, readdir ASSEMBLIES;
+    close ASSEMBLIES;
+    
+    foreach my $sample (@samples) {
+	print "Processing $sample...";
+	my $in_file = "$in_dir/$sample/contig.fa";
+	my $out_file = "$in_dir/$sample/$sample.contig.fa";
+	
+	my $inIO = Bio::SeqIO->new(-file=>$in_file, -format=>'fasta');
+	my $outIO = Bio::SeqIO->new(-file=>">$out_file", -format=>'fasta');
+	while (my $contig = $inIO->next_seq()) {
+	    $contig->display_id($sample . "_" . $contig->display_id());
+	    $outIO->write_seq($contig);
+	}
+	print "done\n";
+    }
+}
