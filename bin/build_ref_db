@@ -37,9 +37,9 @@
 
 =back
 
-=over 4
-
 =head1 OPTIONAL ARGUMENTS
+
+=over
 
 =item B<download>: Download database from defined configuration
 
