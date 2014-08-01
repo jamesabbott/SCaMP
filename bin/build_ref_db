@@ -27,11 +27,7 @@
 
 =over 4
 
-=item B<in_dir>: Path to directory of input data. This should genome records in EMBL or GENBANK formats
-
-=item B<out_dir>: Path to write output files 
-
-=item B<db>: name to assign to database
+=item B<db>: name of database to build
 
 =item B<format>: Format of input files - genbank or embl
 
