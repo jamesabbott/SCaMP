@@ -1,0 +1,45 @@
+#!/bin/bash 
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+# 
+######################################################################
+
+#PBS -l ncpus=1
+#PBS -l mem=8Gb
+#PBS -l walltime=1:00:00
+#PBS -J 0-72
+
+set -e
+
+# Script to tidy up IDBA output directories, while keeping contigs/scaffolds uncompressed
+# Designed for running on ax3 via PBS...
+
+dir=/scratch/jamesa/idba
+
+index=$((${PBS_ARRAY_INDEX}+1))
+cd ${dir}
+sample=`ls -1 ${dir}|sed -n ${index}p`;
+echo $sample
+
+    if [ ! -f ${sample}/${sample}.tar.bz2 ]; then
+	echo Compressing ${sample}
+	mkdir -v temp_${sample}
+	cp -vf ${sample}/idba_out/contig.fa temp_${sample}
+	cp -vf ${sample}/idba_out/scaffold.fa temp_${sample}
+	cp -vf ${sample}/idba_out/log temp_${sample}
+	cd ${sample}
+	mv -v idba_out ${sample}
+	tar cvfj $sample.tar.bz2 ${sample}
+	mv -v $sample.tar.bz2 ${dir}/temp_${sample}/
+	cd ${dir}
+	rm -rv $sample
+	mv -v temp_${sample} $sample
+    else 
+	echo "${sample} already compressed..."
+    fi
+

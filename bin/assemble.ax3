@@ -1,0 +1,119 @@
+#!/usr/bin/perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#PBS -l ncpus=8
+#PBS -l mem=240Gb
+#PBS -l walltime=36:00:00
+#PBS -J 0-72
+
+=pod
+
+=head1 NAME
+
+    assemble
+
+=head1 SYNOPSIS
+
+    assemble 
+
+=head1 DESCRIPTION
+
+    Assembles filtered datasets using IDBA-UD. Modified for running on ax3 
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use File::Copy::Recursive qw(dircopy);
+use Carp qw(croak);
+use FindBin;
+
+my $idba_dir = "/home/jamesa/idba-1.1.1/";
+
+{
+
+ my $task  =  $ENV{'PBS_ARRAY_INDEX'};
+ 
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+
+    my $in_dir = $ENV{'SCRATCH'} . "/fastq";
+    my $out_dir = "/idba";
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z|stdout/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task];
+    chomp $sample;
+    print "Sample is $sample\n";
+
+    if (!-e "$out_dir/$sample/contig.fa") {
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$in_dir/$sample/" or die "Could not open $in_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+
+    my $scratch_dir = "/scratch/jamesa/idba/$sample";
+    if ( -d $scratch_dir ) {
+	print "Removing old scratch directory...\n";	
+	my $errors;
+	remove_tree( $scratch_dir, { error => \$errors } );
+	print "@$errors\n" if (@$errors);
+    }
+    mkdir $scratch_dir or die "mkdir failed: $!";
+    my $idba_out_dir = "$scratch_dir/idba_out";
+    if ( !-d $idba_out_dir ) {
+        mkdir $idba_out_dir or die "mkdir failed: $!";
+    }
+
+    foreach my $pair($pair1, $pair2) {
+	print "Uncompressing $pair...\n";
+	my $out = $pair;
+	$out=~s/.gz//;
+	my $cmd = "zcat $in_dir/$sample/$pair > $scratch_dir/$out";
+	system($cmd)==0 or die "Error gunzip $in_dir/$sample/$pair: $!";
+    } 
+    
+    $pair1=~s/\.gz//;
+    $pair2=~s/\.gz//;
+
+    print "Merging reads...\n";
+    my $cmd = "$idba_dir/bin/fq2fa --merge $scratch_dir/$pair1 $scratch_dir/$pair2 $scratch_dir/merged.fa";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    $cmd = "$idba_dir/bin/idba_ud -o $idba_out_dir -r $scratch_dir/merged.fa --num_threads 8 --pre_correction";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    print "Completed ok...\n";
+    } else {
+	print "Output $out_dir/contig.fa already exists...skipping...\n";
+    }
+
+}
