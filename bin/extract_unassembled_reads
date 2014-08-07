@@ -1,0 +1,185 @@
+#!/bin/env perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=01:00:00,h_vmem=2G
+#$ -t 1-73
+
+=pod
+
+=head1 NAME
+
+    extract_unassembled_reads
+
+=head1 SYNOPSIS
+
+    extract_unassembled_reads --in_dir /path/to/fastqs --out_dir /path/to/outputs 
+
+=head1 DESCRIPTION
+
+    Extracts reads not included in the assemblies by aligning them back against the 
+    contigs, then filtering those from the bam files which do no align
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to input assemblies. This should contain per-sample
+subdirectories, each containing contig sequences in a file name
+sample.contig.fa
+
+=item B<out_dir>: Path to write output files (in per-sample subdirectories).
+
+=item B<fastq_dir>: Path to directores of fastq files used for assembly. This
+shoudl contain per-sample subdirectories, each containing paired fastq files
+named *_1.fq.gz and *_2.fq.gz
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use Carp qw(croak);
+use FindBin;
+use Parallel::ForkManager;
+
+my $samtools   = "/usr/biosoft/cluster/samtools/current/samtools";
+my $bwa        = "/usr/biosoft/cluster/bwa/current/bwa";
+my $picard_dir = "/usr/biosoft/cluster/picard/current/";
+
+{
+
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $in_dir, $out_dir, $fastq_dir, $help, $man );
+    GetOptions(
+                'in_dir=s'    => \$in_dir,
+                'out_dir=s'   => \$out_dir,
+                'fastq_dir=s' => \$fastq_dir,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in_dir || !$out_dir );
+
+    croak "Input directory $in_dir does not exist!"    if ( !-d $in_dir );
+    croak "Fastq directory $fastq_dir does not exist!" if ( !-d $fastq_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task - 1 ];
+    chomp $sample;
+    print "\nReads from sample $sample will be filtered against assembled contigs...\n";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$fastq_dir/$sample/" or die "Could not open $fastq_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+
+    # copy fastq files for sample to local storage...
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( !-d $scratch_dir ) {
+        mkdir $scratch_dir or die "mkdir failed: $!";
+    }
+
+    copy( "$fastq_dir/$sample/$pair1",         "$scratch_dir" ) or die "$pair1 Sample copy failed: $!";
+    copy( "$fastq_dir/$sample/$pair2",         "$scratch_dir" ) or die "$pair2 Sample copy failed: $!";
+    copy( "$in_dir/$sample/$sample.contig.fa", "$scratch_dir" ) or die "$sample.contig.fa copy failed: $!";
+
+    my $cmd = "$bwa index $scratch_dir/$sample.contig.fa";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    $cmd = "$bwa mem -t 8 -M $scratch_dir/$sample.contig.fa $scratch_dir/$pair1 $scratch_dir/$pair2 |"
+      . " $samtools view -Su - > $scratch_dir/$sample.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # bwa mem seems not to write an eof correctly, so lets fix that...
+    $cmd = "/data/florinash/bin/bam_add_eof.py $scratch_dir/$sample.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # Build new fastq files of unaligned reads:
+    # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
+    # therefore we want those with 0x0012 (12), where both apply...
+    $cmd = "$samtools view -b -f 12 -F 256 $scratch_dir/$sample.bam" . " > $scratch_dir/$sample.unaligned.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # Extract fastq format unaligned reads from unaligned.bam
+    $cmd =
+        "/usr/bin/java  -Xmx4G -XX:MaxPermSize=256m -jar $picard_dir/SamToFastq.jar "
+      . "INPUT=$scratch_dir/$sample.unaligned.bam FASTQ=$scratch_dir/$sample"
+      . ".unassembled_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
+      . ".unassembled_2.fq";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    # compress generated fastq files...
+    my $pm = new Parallel::ForkManager(2);
+    foreach my $fastq ( $sample . ".unassembled_1.fq", $sample . ".unassembled_2.fq" ) {
+        $pm->start and next();
+        my $cmd = "gzip $scratch_dir/$fastq";
+        system($cmd) == 0 or die "Error executing command: $cmd";
+        copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
+          or die "Error copying $fastq.gz: $!";
+        $pm->finish();
+    }
+    $pm->wait_all_children();
+
+    my $orig_count = `zcat $scratch_dir/$pair1 \| echo \$((\`wc -l\`/4 ))`;
+    chomp $orig_count;
+    my $unassembled_count = `zcat $scratch_dir/$sample.unassembled_1.fq.gz \| echo \$((\`wc -l\`/4 ))`;
+    chomp $unassembled_count;
+    my $assembled_count = $orig_count - $unassembled_count;
+    open REPORT, ">$out_dir/$sample/$sample.assembled_reads.txt"
+      or die "Error opening $out_dir/$sample/$sample.assembled_reads.txt";
+
+    print REPORT "Sample\tInput\tAssembled\tUnassembled\n";
+    print REPORT "$sample\t$orig_count\t$assembled_count\t$unassembled_count\n";
+    close REPORT;
+
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+
+}
+
