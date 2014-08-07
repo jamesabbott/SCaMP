@@ -1,0 +1,132 @@
+#!/bin/env perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -R y
+#$ -l h_rt=08:00:00,h_vmem=2G
+#$ -t 1-74
+
+=pod
+
+=head1 NAME
+
+    metagenemark_predict
+
+=head1 SYNOPSIS
+
+    metagenemark_predict --in_dir /path/to/contigs --out_dir /path/to/outputs 
+
+=head1 DESCRIPTION
+
+    runs metagenemark on set of contig fasta files. in_dir is expected to
+contain 1 fasta file per sample. Outputs are written to separate per-sample
+subdirectories. Intended to be run via GridEngine, so should be pretty quick.
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should contain one fasta
+file of contigs for each sample
+
+=item B<out_dir>: Path to write output files (in per-sample subdirectories).
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use Carp qw(croak);
+use FindBin;
+
+my $metagenemark_dir = "/usr/biosoft/cluster/metagenemark/current/";
+#metagenemark is built against a newer glibc than ships with RHEL, 
+# but we have newer versions available.
+$ENV{'LD_LIBRARY_PATH'}="/usr/local/lib64:/usr/local/gcc-4.8/lib64/";
+
+{
+
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $in_dir, $out_dir, $help, $man );
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+                'out_dir=s' => \$out_dir,
+              );
+
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1, ) if ( $help || !$in_dir || !$out_dir );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    opendir DIR, $in_dir or die "Error opening $in_dir:$!";
+    my @samples = grep !/\.\.?\z/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task - 1 ];
+    chomp $sample;
+	my $file = $sample;
+	$sample =~s/.contig.fa$//;
+    print "Genes will be predicted in $sample....\n";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # copy contigs for sample to local storage...
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( !-d $scratch_dir ) {
+        mkdir $scratch_dir or die "mkdir failed: $!";
+    }
+
+    copy( "$in_dir/$sample.contig.fa", "$scratch_dir" ) or die "$sample.contig.fa copy failed: $!";
+
+    my $cmd = "$metagenemark_dir/gmhmmp -f G -d -r -m $metagenemark_dir/MetaGeneMark_v1.mod -L $scratch_dir/$sample.metagenemark.log -o $scratch_dir/$sample.gff $scratch_dir/$sample.contig.fa";
+    system($cmd) == 0 or die "Error executing $cmd: $!";
+	$cmd = "$metagenemark_dir/nt_from_gff.pl < $scratch_dir/$sample.gff > $scratch_dir/$sample.genes.fa";
+    system($cmd) == 0 or die "Error executing $cmd: $!";
+
+
+    copy( "$scratch_dir/$sample.genes.fa", "$out_dir/$sample") or die "Error copying $sample.genes.fa: $!";	
+    copy( "$scratch_dir/$sample.gff", "$out_dir/$sample") or die "Error copying $sample.gff: $!";	
+    copy( "$scratch_dir/$sample.metagenemark.log", "$out_dir/$sample") or die "Error copying $sample.metagenemark.log: $!";	
+
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+}
+
