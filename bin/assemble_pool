@@ -1,0 +1,120 @@
+#!/usr/bin/perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=168:00:00,h_vmem=28G
+
+=pod
+
+=head1 NAME
+
+    assemble_pool
+
+=head1 SYNOPSIS
+
+    assemble_pool
+
+=head1 DESCRIPTION
+
+    Assembles reads which remain unassembled following first pass assembly. 
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to input directory. This should contain a subdirectory
+named 'pooled' containing the merged reads from 'extract_unassembled_reads'
+
+=item B<out_dir>: Path to output directory
+
+=back 
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree mkpath);
+use File::Copy::Recursive qw(dircopy);
+use Carp qw(croak);
+use FindBin;
+
+my $idba_dir = "/usr/biosoft/cluster/idba/current";
+
+{
+    my ( $in_dir, $out_dir, $help, $man );
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+                'out_dir=s' => \$out_dir,
+              );
+
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1, ) if ( $help || !$in_dir || !$out_dir );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    my $sample = 'pooled';
+    print "Sample is $sample\n";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    my $pair1 = "unassembled_pool.1.fq.gz";
+    my $pair2 = "unassembled_pool.2.fq.gz";
+
+    my $scratch_dir = "/scratch/jamesa/idba/$sample";
+    if ( -d $scratch_dir ) {
+	print "Removing old scratch directory...\n";	
+	my $errors;
+	remove_tree( $scratch_dir, { error => \$errors } );
+	print "@$errors\n" if (@$errors);
+    }
+    mkpath $scratch_dir or die "mkdir failed: $!";
+    my $idba_out_dir = "$scratch_dir/idba_out";
+    if ( !-d $idba_out_dir ) {
+        mkdir $idba_out_dir or die "mkdir failed: $!";
+    }
+
+    foreach my $pair($pair1, $pair2) {
+	print "Uncompressing $pair...\n";
+	my $out = $pair;
+	$out=~s/.gz//;
+	my $cmd = "zcat $in_dir/$sample/$pair > $scratch_dir/$out";
+	system($cmd)==0 or die "Error gunzip $in_dir/$sample/$pair: $!";
+    } 
+    
+    $pair1=~s/\.gz//;
+    $pair2=~s/\.gz//;
+
+    print "Merging reads...\n";
+    my $cmd = "$idba_dir/bin/fq2fa --merge $scratch_dir/$pair1 $scratch_dir/$pair2 $scratch_dir/merged.fa";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    $cmd = "$idba_dir/bin/idba_ud -o $idba_out_dir -r $scratch_dir/merged.fa --num_threads 8 --pre_correction";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    print "Completed ok...\n";
+
+}
