@@ -168,9 +168,32 @@ assemble.ax3`. This should produce one output directory per sample, including a
 
 ### Compress Assemblies
 
-Much of the data produced by the assembly process should be retainined but is not likely to be required, so can be safely compressed. The script `compress_assemblies.ax3` will created a bzipped tarball for each assembly containing the files not likely to be required in future, while leaving the contigs.fa and scaffolds.fa uncompressed. This should be run as:
+Much of the data produced by the assembly process should be retainined but is
+not likely to be required, so can be safely compressed. The script
+`compress_assemblies.ax3` will created a bzipped tarball for each assembly
+containing the files not likely to be required in future, while leaving the
+contigs.fa and scaffolds.fa uncompressed. This should be run as:
 
 `qsub compress_assemblies.ax3`
 
+The resulting contents of the `${SCRATCH}/idba` directory should then be copied
+back to codon.
+
 ### Contig Renaming
 
+The contigs will have non-unique names between assemblies, so prior to doing
+anything which may confuse the origins of these, they should be renamed to
+include the sample identifier. This can be simply achieved using the
+`tag_contigs` script on codon, which can be run directly rather than needing to
+be queued. This requires a single parameter, 'in_dir', which is the path to the
+directory of assemblies. Running this script will create a second copy of the
+contigs named 'sample_id.contig.fa', with each contig id also prefixed with the
+sample id.
+
+`bin/tag_contigs --in_dir /data/florinash/assembly/IDBA_UD/`
+
+## Second pass assembly
+
+1) Extract unassembled reads
+2) Reassemble - runtime = 36 hours, vmax=196Gb (real figures...)
+3) COntig renaming
