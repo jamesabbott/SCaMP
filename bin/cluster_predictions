@@ -1,0 +1,81 @@
+#!//bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+
+=pod
+
+=head1 NAME
+
+    cluster_predictions
+
+=head1 SYNOPSIS
+
+    cluster_predictions --in /path/to/fasta_file --out /path/to/merged.fasta
+
+=head1 DESCRIPTION
+
+    Cluster gene predictions using uclust. per-sample gene predictions should already have been merged into a single fasta file and the IDs tagged with the sample name using 'tag_and_merge_gene_predictions'. Intended for interactive use rather than running via gridengine, but should work ok if submitted as a single SGE job
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to multi-fastafile of gene predictions. 
+
+=item B<out>: Path to write output 
+
+=item B<id>: %id threshold for clusters
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in, $out_dir, $id, $help, $man );
+    GetOptions(
+                'in=s'      => \$in,
+                'out_dir=s' => \$out_dir,
+                'id=s'      => \$id,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out_dir || !$id );
+
+    my $usearch = "/usr/biosoft/bin/usearch";
+    croak "$in does not exist" unless ( -e $in );
+    mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+
+    print "\nSorting sequences by length...\n";
+    my $cmd = $usearch . " -sortbylength $in -output $in.sorted";
+    system($cmd) == 0 or croak "Error executing $cmd: $!";
+
+    print "\nClustering sequences...\n";
+    $cmd = $usearch
+      . " -cluster_smallmem $in.sorted -id $id -qmask fastnucleo -strand both -centroids $out_dir/cluster.$id.fa --consout $out_dir/cluster.$id.consensus.fa -uc $out_dir/cluster.$id.uc";
+
+    #	my $cmd = "cd-hit-est -d 100 -i $in -o $out_dir/cluster_$id -n 8  -r 1 -c $id -M 322768 -T 8" ;
+    system($cmd) == 0 or croak "Error executing $cmd: $!";
+}

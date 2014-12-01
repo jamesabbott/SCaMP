@@ -1,0 +1,88 @@
+#!//bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+#$ -t 1-4192
+#$ -pe smp 8
+#$ -l h_rt=72:00:00,h_vmem=2G
+#$ -cwd
+
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+
+=pod
+
+=head1 NAME
+
+    iprscan_clusters
+
+=head1 SYNOPSIS
+
+    iprscan_clusters --in /path/to/directory/of/fasta_files --db /path/to/kegg/genes.pep --out /path/to/outfiles
+
+=head1 DESCRIPTION
+
+   Annotate translated gene models (i.e. centroids from uclust clustering of gene predictions) with iprscan
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to directory of fastafiles containing query sequences. 
+
+=item B<out>: Path the output directory
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+	$ENV{'SGE_ROOT'}="/opt/sge/current";
+	$ENV{'SGE_CELL'}="bss";
+    my ( $in, $out_dir, $help, $man );
+    GetOptions( 'in=s'  => \$in,
+                'out=s' => \$out_dir, );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out_dir );
+
+    mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+
+    opendir IN, $in or croak "Error opening $in directory: $!";
+    my @query_files = map { $_->[0] }
+      sort { $a->[1] <=> $b->[1] }
+      map { [ $_, /([0-9]+)/ ] }
+      grep /pep$/, readdir IN;
+    close IN;
+
+    my $jid        = $ENV{'SGE_TASK_ID'};
+    my $query_file = $query_files[ $jid - 1 ];
+
+    my $out_base = "iprscan.$jid";
+
+    print "\nRunning iprscan on $query_file...\n";
+    my $cmd = "/usr/biosoft/cluster/iprscan/current/interproscan.sh --pathways --goterms -b $out_dir/$out_base -f xml -i $in/$query_file";
+    system($cmd) == 0 or croak "Error executing $cmd: $!";
+
+}

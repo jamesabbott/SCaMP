@@ -1,0 +1,253 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+=head1 NAME
+
+    patric_bwa_postprocess
+
+=head1 SYNOPSIS
+
+    kraken_bwa_postprocess --in_dir /path_to_input_dir 
+
+=head1 DESCRIPTION
+
+    SGE based post-processing of bwa alignments vs patric (i.e.) database outputs to assign taxonomic classifications to taxids
+    
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of input data. This should contains one
+    co-ordinate sorted, indexed bam file per sample, name "$sample.sorted.bam".
+
+=back
+
+=head1 OPTIONAL ARGUMENTS
+
+=over 4
+
+=item B<help>: Display help text
+
+=item B<man>: Display manual page
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Path qw(remove_tree);
+use File::Find::Rule;
+use File::Basename;
+use Carp qw(croak);
+use Cwd;
+use Bio::DB::Taxonomy;
+use Bio::DB::Sam;
+use Bio::Tree::Tree;
+use Term::ProgressBar;
+
+{
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $in_dir, $help, $man );
+
+    GetOptions(
+                'in_dir=s' => \$in_dir,
+                'help'     => \$help,
+                'man'      => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in_dir );
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    my $db_dir = "/data/florinash/reference_data/taxonomy";
+
+    my @bam_files = File::Find::Rule->file()->name("*.sorted.bam")->in($in_dir);
+
+    my $errors;
+    my $bam = $bam_files[ $task - 1 ];
+
+    my $sample = $bam;
+    $sample = fileparse($bam);
+    $sample =~ s/\.sorted\.bam//;
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    #if ( -d $scratch_dir ) {
+    #    print "\nRemoving old scratch directory: $scratch_dir...\n";
+    #    remove_tree( $scratch_dir, { error => \$errors } );
+    #    if (@$errors) {
+    #        print "Errors occurred removing $scratch_dir: \n\n";
+    #        foreach my $error (@$errors) {
+    #            print "$error\n";
+    #        }
+    #    }
+    #}
+
+    #print "\nCopying data to $scratch_dir...";
+    #mkdir $scratch_dir or die "mkdir failed: $!";
+    #chdir $scratch_dir or die "chdir failed: $!";
+    #my @tax_files = qw(nodes.dmp names.dmp nodes parents names2id id2names);
+    #foreach my $tax_file (@tax_files) {
+    #    copy( "$db_dir/$tax_file", "$scratch_dir/$tax_file" ) or die "Error copying $tax_file: $!";
+    #}
+    #print "Done\n";
+
+    my %tax_ids   = ();
+    my $nodefile  = "$scratch_dir/nodes.dmp";
+    my $namesfile = "$scratch_dir/names.dmp";
+    my $idx_dir   = "$scratch_dir";
+
+    my $tax_db = new Bio::DB::Taxonomy(
+                                        -source    => 'flatfile',
+                                        -nodesfile => $nodefile,
+                                        -namesfile => $namesfile,
+                                        -directory => $idx_dir
+                                      );
+
+    print "\nProcessing sample $sample...\n";
+    my $sam = Bio::DB::Sam->new( -bam => $bam );
+    my @contigs = $sam->seq_ids();
+    my $progress = Term::ProgressBar->new($#contigs);
+
+    my $total_reads      = 0;
+    my $classified_reads = 0;
+
+    my $done = 0;
+
+    foreach my $contig (@contigs) {
+        my $taxon_id = $1 if ( $contig=~/^([0-9]+)_/ );
+
+        my ( %tax, %genus_tax );
+        my $tot = 0;
+
+        my @features = $sam->get_features_by_location( -seq_id => $contig );
+        foreach my $feature (@features) {
+            my $query_id = $feature->query()->name();
+            $tax_ids{$taxon_id}++;
+            $tot++;
+        }
+        #use Data::Dumper;
+        #print Dumper( \%tax );
+        #exit;
+	$progress->update(++$done);
+    }
+    open TAXCOUNTS, ">$in_dir/$sample.tax_counts.txt." or die "Error opening $in_dir/$sample.tax_counts.txt: $!";
+    foreach my $tax(keys(%tax_ids)) {
+	print TAXCOUNTS $tax,"\t",$tax_ids{$tax},"\n";
+    }
+    close TAXCOUNTS;
+}
+
+#first lets count how many reads hit each taxid...
+#open IN, "$in_dir/$file" or die "Error opening $in_dir/$file; $!";
+#while ( my $line = <IN> ) {
+#    if ( $line =~ /^C/ ) {
+#        my $tax_id = ( split( /\t/, $line ) )[2];
+#        $tax_ids{$tax_id}++;
+#        $classified_reads++;
+#    }
+#    $total_reads++;
+#}
+#close IN;
+#print "Done\n";
+
+#my %labels = (
+#               superkingdom => {},
+#               phylum       => {},
+#               class        => {},
+#               order        => {},
+#               family       => {},
+#               genus        => {},
+#               species      => {},
+#             );
+#
+#    my $count = 0;
+#    foreach my $node ( keys(%tax_ids) ) {
+#        my $tax_node = $tax_db->get_Taxonomy_Node( -taxonid => $node );
+#        my $tree     = Bio::Tree::Tree->new( -node          => $tax_node );
+#        my @taxa     = $tree->get_nodes;
+#        my $label;
+#
+#        $count++;
+#        foreach my $taxa ( $tree->get_nodes ) {
+#            unless ( $taxa->rank eq 'no rank' ) {    # || $taxa->rank eq 'subphylum'||$taxa->rank eq' superphylum') {
+#                my $part_label;
+#                if ( $taxa->rank eq 'superkingdom' ) {
+#                    $part_label = 'k__' . $taxa->scientific_name;
+#                }
+#                elsif ( $taxa->rank eq 'subphlyum' ) {
+#                    $part_label = 'subp__' . $taxa->scientific_name;
+#                }
+#                elsif ( $taxa->rank eq 'superphylum' ) {
+#                    $part_label = 'supp__' . $taxa->scientific_name;
+#                }
+#                else {
+#                    $taxa->rank =~ /(^[a-z])/;
+#                    $part_label = $1 . '__' . $taxa->scientific_name;
+#                }
+#                $label .= "|" if ($label);
+#                $label .= $part_label;
+#
+#                # Add counts for this rank based on read counts previously allocated to tax_id...
+#                $labels{ $taxa->rank }{$label} += $tax_ids{$node};
+#                if ( $label !~ /^k__/ ) {
+#                    print "$label\n";
+#                }
+#            }
+#        }
+#    }
+#
+#    open OUT, ">$in_dir/$sample.classification.txt"
+#      or die "Error opening $in_dir/$sample.classificaion.txt: $!";
+#    open STATS, ">$in_dir/$sample.rank_counts.txt" or die "Error opening $in_dir/$sample.rank_counts.txt: $!";
+#
+#    foreach my $rank qw(superkingdom phylum class order family genus species) {
+#        my $members = $labels{$rank};
+#        my $rank_total;
+#        foreach my $member ( sort { $members->{$b} <=> $members->{$a} } keys(%$members) ) {
+#            my $prop = sprintf( "%.5f", $members->{$member} / $classified_reads );
+#            if ( $prop > 0.01 ) {
+#                print OUT $member, "\t$prop\n";
+#                $rank_total += $members->{$member};
+#            }
+#        }
+#        print STATS "$rank: $rank_total\n";
+#    }
+#    print STATS "\nClassified reads: $classified_reads\n";
+#    print STATS "Total Reads: $total_reads\n";
+#    close OUT;
+#    close STATS;
+#
+#    remove_tree( $scratch_dir, { error => \$errors } );
+#    if (@$errors) {
+#        print "Errors occurred removing $scratch_dir: \n\n";
+#        foreach my $error (@$errors) {
+#            print "$error\n";
+#        }
+#    }
+#
+#}
+

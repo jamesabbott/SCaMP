@@ -1,0 +1,83 @@
+#!//bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+
+=pod
+
+=head1 NAME
+
+    kegg_map_clusters
+
+=head1 SYNOPSIS
+
+    kegg_map_cluster --in /path/to/directory/of/fasta_files --db /path/to/kegg/genes.pep --out /path/to/outfiles
+
+=head1 DESCRIPTION
+
+   Map nucleotide sequences (i.e. centroids from uclust clustering of gene predictions) against KEGG genes database 
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to directory of fastafiles containing query sequences. 
+
+=item B<db>: Path the KEGG genes.pep file
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in, $db, $out_dir, $help, $man );
+    GetOptions(
+                'in=s'  => \$in,
+                'db=s'  => \$db,
+                'out=s' => \$out_dir,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$db || !$out_dir );
+
+    mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+
+    opendir IN, $in or croak "Error opening $in directory: $!";
+    my @query_files = grep !/\.\.?\z/, readdir IN;
+    close IN;
+
+    my $usearch = "/usr/biosoft/bin/usearch";
+
+    foreach my $query_file (@query_files) {
+        croak "$in/$query_file does not exist" unless ( -e "$in/$query_file" );
+        my $out_file = $query_file;
+        $out_file .= ".out";
+
+        print "\nMapping $query_file to $db...\n";
+
+        my $cmd = $usearch . " -ublast $in/$query_file -db $db -evalue 1e-9 -maxhits 1 -threads 8 -blast6out $out_dir/$out_file";
+        system($cmd) == 0 or croak "Error executing $cmd: $!";
+    }
+}

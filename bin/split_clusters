@@ -1,0 +1,90 @@
+#!//bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use Bio::SeqIO;
+
+=pod
+
+=head1 NAME
+
+    split_clusters
+
+=head1 SYNOPSIS
+
+    split_clusters --in /path/to/centroids.fa --out /path/to/outdir
+
+=head1 DESCRIPTION
+
+    The output of clustering gene predictions is a multi-fasta file containing (probably) millions of sequences, however usearch can use a maximum of 2 million sequences, so these need splitting into smaller fasta files. 
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to multi-fastafile of gene predictions. 
+
+=item B<out>: Path to write output 
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in, $out_dir, $help, $man );
+    GetOptions( 'in=s'      => \$in,
+                'out_dir=s' => \$out_dir, );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out_dir );
+
+    mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+    my $file_num  = 0;
+    my $seq_max   = 1000;
+    my $seq_count = 0;
+    my $outIO;
+
+    ( $file_num, $outIO ) = new_file( $out_dir, $file_num );
+    my $inIO = Bio::SeqIO->new( -file => $in, -format => 'fasta' );
+    while ( my $seq = $inIO->next_seq() ) {
+        $outIO->write_seq($seq);
+        $seq_count++;
+        if ( $seq_count == $seq_max ) {
+            ( $file_num, $outIO ) = new_file( $out_dir, $file_num );
+            $seq_count = 0;
+        }
+    }
+}
+
+sub new_file {
+
+    my $out_dir  = shift;
+    my $file_num = shift;
+
+    print "Opening $out_dir/clusters.$file_num.fa...\n";
+    my $outIO = Bio::SeqIO->new( -file => ">$out_dir/clusters.$file_num.fa", -format => 'fasta' );
+
+    return ( ++$file_num, $outIO );
+}

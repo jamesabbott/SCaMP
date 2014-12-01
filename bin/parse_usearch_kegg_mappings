@@ -1,0 +1,101 @@
+#!/bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use Data::Dumper;
+
+=pod
+
+=head1 NAME
+
+    parse_usearch_kegg_mappings
+
+=head1 SYNOPSIS
+
+    parse_usearch_kegg_mappings
+
+=head1 DESCRIPTION
+
+   Parses usearch blast6out format mappings of centroids vs. kegg proteins, and looks up KO numbers for hit sequences
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to blast6out format usearch output
+
+=item B<out>: Path to output file
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in, $out, $help, $man );
+    GetOptions( 'in=s'  => \$in,
+                'out=s' => \$out, );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out );
+	print "Loading KO mappings...\n";
+	my %ko_mappings;
+	open KO, "/data/databases/flatfiles/kegg/mirror/genes/ko/ko_genes.list" or croak "Error opening ko_genes.list: $!";
+	while (my ($ko, $id) = split(/\t/,<KO>)) {
+		chomp $id;
+		$ko_mappings{$id}=$ko;
+	}
+	close KO;
+
+	print "Parsing results...\n";
+	my (%kos, %samples);
+    open IN, $in or croak "Error opening $in: $!";
+	while (my @fields = (split /\t/,<IN>)) {
+		my $id = $fields[0];
+		my $hit = $fields[1];
+		my $ko = $ko_mappings{$hit};
+		
+		if ($ko) {
+			$kos{$ko}++;
+			my $species = $1 if ($id=~/^([A-Za-z0-9\-]+)_/);
+			if ($samples{$species}) {
+				$samples{$species}->{$ko}++;
+			} else {
+				my %hash=($ko => 1);
+				$samples{$species} = \%hash;	
+			}
+		}
+	}
+    close IN;
+	open OUT, ">$out" or croak "Error opening $out: $!";
+	foreach my $sample(sort keys(%samples)) {
+		my $hash = $samples{$sample};
+		foreach my $ko(keys %$hash) {
+			print OUT "$sample\t$ko\t$hash->{$ko}\n";
+		}
+	}
+	close OUT;
+
+
+}

@@ -1,0 +1,85 @@
+#!//bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Bio::SeqIO;
+use Getopt::Long;
+use Pod::Usage;
+use File::Find::Rule;
+use Carp qw(croak);
+
+=pod
+
+=head1 NAME
+
+    tag_and_merge_gene_predictions
+
+=head1 SYNOPSIS
+
+    tag_and_merge_gene_predictions --in_dir /path/to/predictions --out /path/to/merged.fasta
+
+=head1 DESCRIPTION
+
+    Renames gene predictions to include the sample name, and writes all samples to a single fasta file
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in_dir>: Path to directory of gene predictions. This should contain one sub-directory per sample
+
+=item B<out>: Path to write multi-fasta output file
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in_dir, $out, $help, $man);
+    GetOptions(
+                'in_dir=s'  => \$in_dir,
+		'out=s' => \$out,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in_dir || !$out );
+    
+    croak "$in_dir does not exist" unless (-e $in_dir);
+
+    opendir GENES, $in_dir or croak "Error opening $in_dir: $!";
+    my @samples = grep !/\.\.?\z/, readdir GENES;
+    close GENES;
+    
+    my $outIO = Bio::SeqIO->new(-file=>">$out", -format=>'fasta');
+    foreach my $sample (@samples) {
+	print "Processing $sample...";
+
+	my $in_file = "$in_dir/$sample/$sample.genes.fa";
+	my $inIO = Bio::SeqIO->new(-file=>$in_file, -format=>'fasta');
+
+	while (my $gene = $inIO->next_seq()) {
+	    $gene->display_id($sample . "_" . $gene->display_id());
+	    $outIO->write_seq($gene);
+	}
+	print "done\n";
+    }
+}
