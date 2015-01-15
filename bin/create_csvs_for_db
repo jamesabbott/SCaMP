@@ -74,8 +74,8 @@ Email j.abbott@imperial.ac.uk
 
     my %cluster_ids;
 
-	# Parse cluster centroids, and generate primary key for tebale with $count, 
-	# and store id -> $count mapping for looking up cluster ids later on...
+    # Parse cluster centroids, and generate primary key for tebale with $count,
+    # and store id -> $count mapping for looking up cluster ids later on...
     my $inIO = Bio::SeqIO->new( -format => 'fasta', -file => "$clusters" );
     open OUT, ">$out/Cluster.csv" or die "Could not open $out: $!";
     my $count = 0;
@@ -88,7 +88,7 @@ Email j.abbott@imperial.ac.uk
     }
     close OUT;
 
-	# Parse kegg kos (generated with allocate_kos_to_clusters) - doesn't matter if this is sorted or not
+    # Parse kegg kos (generated with allocate_kos_to_clusters) - doesn't matter if this is sorted or not
     open KEGG_MAPPING, ">$out/KeggMapping.csv" or die "Error opening $out/kegg_mapping.csv: $!";
     open KOS, $kos or die "Error opening $kos:$!";
     while ( my $line = <KOS> ) {
@@ -126,7 +126,8 @@ Email j.abbott@imperial.ac.uk
 
             my $xref = $xc2->findnodes('./ipr:xref');
             foreach my $node ( $xref->get_nodelist() ) {
-		# We might have multiple IDs attached to a single iprscan result, if the protein is identical
+
+                # We might have multiple IDs attached to a single iprscan result, if the protein is identical
                 my @atts = $node->attributes();
                 foreach my $att (@atts) {
                     my $id      = $att->getValue;
