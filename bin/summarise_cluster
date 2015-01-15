@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+# Produces summary of clusters with KOs and sample read-counts following
+# creation of per-sample aligned read-counts with align_reads_to_clusters
+# and parsing of usearch results with allocate_kos_to_clusters
+#
+######################################################################
+
+use warnings;
+use strict;
+
+use File::Find::Rule;
+use File::Basename qw(fileparse);
+
+{
+
+	my $kos = "/data/florinash/genes/clustered/kegg_mapping/cluster_kos_sorted.txt";
+	my $read_mapping_dir = "/data/florinash/genes/clustered/bwa_read_mapping/";
+	
+	my %clusters;
+	my @samples;
+	open KOS, $kos or die "Error opening $kos: $!";
+	while (my ($cluster, $hit, $ko) = split(/\t/,<KOS>)) {
+		$ko=~s/(\n)*$//; #seem to be multiple line-endings...
+		if (defined($clusters{$cluster}->{'ko'} && $clusters{$cluster}->{'ko'} ne "")) {
+			my $old_ko=$clusters{$cluster}->{'ko'};
+			($ko ne "") ? ($ko = $old_ko . '; ' . $ko) : ($ko = $old_ko);;
+		}
+		$clusters{$cluster} = { hit => $hit}; 
+		if (defined($ko) && ($ko ne "")) { $clusters{$cluster}->{'ko'} = $ko };
+	}
+	close KOS;
+
+	
+	my @count_files = File::Find::Rule->file()->name("*.counts.txt")->in($read_mapping_dir);
+	foreach my $file (@count_files) {
+		my $sample = fileparse($file);
+		$sample=~s/.counts.txt//;
+		push @samples, $sample;
+		print "Reading $sample...\n";
+		open COUNTS, $file or die "Error oening $file: $!";
+		while (my ($cluster, $count) = split(/\t/,<COUNTS>)) {
+			chomp $count;
+			if ($clusters{$cluster}) {
+				$clusters{$cluster}->{$sample}=$count;
+			}
+			
+		}
+		close COUNTS;
+	}
+
+	open OUT, ">/data/florinash/genes/clustered/cluster_abundance.txt" or die "Error opening /data/florinash/genes/clustered/cluster_abundance.txt:$!";
+	@samples = sort(@samples);
+	print OUT "Cluster\tKegg Hit\tKO\t", join("\t",@samples),"\n";
+	foreach my $cluster (sort keys %clusters) {
+		print OUT "$cluster\t";
+		print OUT $clusters{$cluster}->{'hit'},"\t", $clusters{$cluster}->{'ko'};
+		foreach my $sample (@samples) {
+			if (defined($clusters{$cluster}->{$sample})) {
+				print OUT "\t", $clusters{$cluster}->{$sample};
+			} else {
+				print OUT "\t0";
+			}
+		}
+		print OUT "\n";
+	}
+}
