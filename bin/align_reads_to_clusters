@@ -1,0 +1,186 @@
+#!/bin/env perl
+
+############################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+############################################################
+
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=144:00:00,h_vmem=2G
+#$ -t 1-73
+
+=pod
+
+=head1 NAME
+
+    align_reads_to_clusters
+
+=head1 SYNOPSIS
+
+    align_reads_to_clusters --read_dir /path/to/trimmed/fastqs --out_dir /path/to/outputs --db /path/to/bwa_indexed_clusters
+
+=head1 DESCRIPTION
+
+    Aligns fastq files using BWA's mem algorithm against the cluster centroid
+    sequences, and parses the outputs to generate a summary.
+
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<read_dir>: Path to directory of trimmed fasta files. This should contain per-sample subdirectories, each containing paired (preferably gzipped) fastq reads. 
+
+=item B<out_dir>: Path to write output files (in per-sample subdirectories).
+
+=item B<db>: Path to directory containing bwa indexed database to align reads against
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Copy;
+use File::Copy::Recursive qw(dircopy);
+use File::Path qw(remove_tree);
+use File::Basename;
+use Carp qw(croak);
+use FindBin;
+use Bio::DB::Sam;
+use Parallel::ForkManager;
+
+my $samtools   = "/usr/biosoft/cluster/samtools/current/samtools";
+my $bwa        = "/usr/biosoft/cluster/bwa/current/bwa";
+my $picard_dir = "/usr/biosoft/cluster/picard/current/";
+
+{
+
+    my $task;
+    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "Arguments are @ARGV\n";
+
+    my ( $sample_dir, $out_dir, $db, $help, $man );
+    GetOptions(
+                'read_dir=s' => \$sample_dir,
+                'out_dir=s'  => \$out_dir,
+                'db=s'       => \$db,
+              );
+
+    my $usage = "Usage: $0 --read_dir /path/to/reads --db /path/to/db --out_dir /path/to/outputs";
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1, message => $usage ) if ( $help || !$out_dir || !$sample_dir );
+
+    opendir DIR, $sample_dir or die "Error opening $sample_dir:$!";
+    my @samples = sort grep !/\.\.?\z|stdout/, readdir DIR;
+    close DIR;
+
+    my $sample = $samples[ $task - 1 ];
+    chomp $sample;
+    print "Sample $sample\n";
+
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$sample_dir/$sample/" or die "Could not open $sample_dir/$sample: $!";
+    my $pair1 = ( grep ( /_1.fq.gz/, readdir SAMPLE ) )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep ( /_2.fq.gz/, readdir SAMPLE ) )[0];
+    close SAMPLE;
+    opendir DB, "$db" or die "Could not open $db: $!";
+    my $db_file = ( grep ( /.amb$/, readdir DB ) )[0];
+    close DB;
+    $db_file = ( fileparse( $db_file, '.amb' ) )[0];
+
+    # copy fastq files for sample to local storage...
+    mkdir '/local_scratch/florinash/'
+      or die "Could not create /local_scratch/florinash: $!"
+      unless ( -d '/local_scratch/florinash' );
+
+    my $scratch_dir = "/local_scratch/florinash/$sample";
+    if ( !-d $scratch_dir ) {
+        mkdir $scratch_dir or die "mkdir failed: $!";
+    }
+
+    copy( "$sample_dir/$sample/$pair1", "$scratch_dir" ) or die "$pair1 Sample copy failed: $!";
+    copy( "$sample_dir/$sample/$pair2", "$scratch_dir" ) or die "$pair2 Sample copy failed: $!";
+    dircopy( $db, $scratch_dir ) or die "$db copy failed: $!";
+	my $cmd = "zcat $scratch_dir/$pair1 > $scratch_dir/reads.fq";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+	 $cmd = "zcat $scratch_dir/$pair2 >> $scratch_dir/reads.fq";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    $cmd = "$bwa mem -t 8 -M $scratch_dir/$db_file $scratch_dir/reads.fq |"
+      . " $samtools view -Su - > $scratch_dir/$sample.clusters.bam";
+
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # bwa mem seems not to write an eof correctly, so lets fix that...
+    $cmd = "/data/florinash/bin/bam_add_eof.py $scratch_dir/$sample.clusters.bam";
+
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    $cmd =
+        "/usr/bin/java -Xmx12G -XX:MaxPermSize=1G -jar $picard_dir/SortSam.jar "
+      . "INPUT=$scratch_dir/$sample.clusters.bam OUTPUT=$scratch_dir/$sample.clusters.sorted.bam "
+      . "SORT_ORDER=coordinate CREATE_INDEX=true";
+
+    system($cmd) == 0 or die "Error executing command: $!";
+
+	# don't want paired-alignments specifically, since single aligned reads perfectly valid here (reads may be paired in assembly but split across coding/non-coding space...
+    open( BAM, "$samtools view $scratch_dir/$sample.clusters.sorted.bam|" );
+    open COUNTS, ">$scratch_dir/$sample.counts.txt" or die "Error opening $scratch_dir/$sample.counts.txt: $!";
+    my $last_id  = "";
+    my $id_count = 0;
+    while ( my $id = ( split( /\t/, <BAM> ) )[2] ) {
+        if ( $id eq $last_id || $last_id eq "" ) {
+            $id_count++;
+        }
+        else {
+            print COUNTS "$last_id\t$id_count\n";
+            $id_count = 0;
+        }
+        $last_id = $id;
+    }
+    close COUNTS;
+
+    copy( "$scratch_dir/$sample.clusters.sorted.bam", "$out_dir/$sample/$sample.clusters.sorted.bam" )
+      or die "Error copying $sample.clusters.sorted.bam: $!";
+    copy( "$scratch_dir/$sample.clusters.sorted.bai", "$out_dir/$sample/$sample.clusters.sorted.bai" )
+      or die "Error copying $sample.clusters.sorted.bam: $!";
+    copy( "$scratch_dir/$sample.counts.txt", "$out_dir/$sample/$sample.counts.txt" )
+      or die "Error copying $sample.counts.bam: $!";
+
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+
+}
+
