@@ -82,7 +82,7 @@ Email j.abbott@imperial.ac.uk
     my $out_base = "iprscan.$jid";
 
     print "\nRunning iprscan on $query_file...\n";
-    my $cmd = "/usr/biosoft/cluster/iprscan/current/interproscan.sh --pathways --goterms -b $out_dir/$out_base -f xml -i $in/$query_file";
+    my $cmd = "/usr/biosoft/cluster/iprscan/current/interproscan.sh --pathways --goterms --iprlookup -b $out_dir/$out_base -f xml -i $in/$query_file";
     system($cmd) == 0 or croak "Error executing $cmd: $!";
 
 }
