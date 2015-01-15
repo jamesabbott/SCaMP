@@ -1,0 +1,105 @@
+#!/bin/env perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+use warnings;
+use strict;
+
+$|++;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use Bio::SearchIO;
+use Bio::Search::Tiling::MapTiling;
+
+=pod
+
+=head1 NAME
+
+    allocate_kos_to_clusters
+
+=head1 SYNOPSIS
+
+    allocate_kos_to_clusters --indir /path/to/usearch_output --outdir path/to/output/dir
+
+=head1 DESCRIPTION
+
+   Parses usearch blast6out format mappings of centroids vs. kegg proteins, and looks up KO numbers for each hit sequences
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<in>: Path to blast6out format usearch output
+
+=item B<out>: Path to output file
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+{
+    my ( $in, $out, $help, $man );
+    GetOptions( 'indir=s'  => \$in,
+                'outdir=s' => \$out, );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out );
+    print "Loading KO mappings...\n";
+    my %ko_mappings;
+
+   	open KO, "/data/databases/flatfiles/kegg/mirror/genes/ko/ko_genes.list" or croak "Error opening ko_genes.list: $!";
+   	while (my ($ko, $id) = split(/\t/,<KO>)) {
+   		chomp $id;
+   		$ko_mappings{$id}=$ko;
+   	}
+   	close KO;
+
+    print "Parsing results...\n";
+    my ( %kos, %samples );
+    opendir RES, $in or die "Error opening input directory $!";
+    my @files = grep /.out$/, readdir RES;
+    close RES;
+    open OUT, ">$out" or die "Error opening $out: $!";
+    foreach my $file (@files) {
+        my $in = new Bio::SearchIO( -file => "$in/$file", -format => 'blasttable' );
+        while ( my $result = $in->next_result ) {
+            my ( $top_hit, $top_length);
+		my $top_score=0;
+            while ( my $hit = $result->next_hit ) {
+                my $top_hsp = $hit->next_hsp();
+                if ( $top_hsp->length('total') > 50 && $top_hsp->percent_identity >= 80 ) {
+			if ($top_hsp->length('total') * ($top_hsp->bits()) > $top_score)
+			{
+				$top_score = $top_hsp->length('total') * $top_hsp->bits;
+				$top_length = $top_hsp->length('total');
+				$top_hit = $hit->name;
+			}
+                    }
+	
+            }
+		if ($top_hit) {
+		print OUT $result->query_name(),"\t",$top_hit,"\t";
+		($ko_mappings{$top_hit}) ? (print OUT $ko_mappings{$top_hit}, "\n") : (print OUT "\n");
+		}
+        }
+
+    }
+    close OUT;
+
+}
