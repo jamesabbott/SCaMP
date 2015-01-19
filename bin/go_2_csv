@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 
 ######################################################################
-# 
+#
 # $HeadURL$
 # $Author$
 # $Revision$
 # $Date$
-# 
+#
 ######################################################################
 
 use warnings;
@@ -15,6 +15,7 @@ use strict;
 use Pod::Usage;
 use Getopt::Long;
 use Carp qw(croak);
+
 =pod
 
 =head1 NAME
@@ -45,42 +46,42 @@ Email j.abbott@imperial.ac.uk
 
 =cut
 
-
 {
 
     my ( $go, $out, $help, $man );
 
     GetOptions(
-                'go=s' => \$go,
-                'out=s'      => \$out,
-                'man'        => \$man,
-                'help'       => \$help,
+                'go=s'  => \$go,
+                'out=s' => \$out,
+                'man'   => \$man,
+                'help'  => \$help,
               );
 
     croak "\nUnknown argument: @ARGV" if "@ARGV";
     pod2usage( verbose => 2 ) if ($man);
-    pod2usage( verbose => 1 ) if ( $help || !$go|| !$out );
+    pod2usage( verbose => 1 ) if ( $help || !$go || !$out );
 
-	open GO, $go or die "Error opening $go: $!";
-	open OUT, ">$out" or die "Error opening $out: $!";
-	my %go;
-	while (my $line = <GO>) {
-		if ($line eq "[Term]\n") {
-			if (exists ($go{'id'})) {
-				print OUT $go{'id'},",",$go{'namespace'},",",$go{'name'},",",$go{'def'},"\n";
-			}
-			%go=();
+    open GO,  $go     or die "Error opening $go: $!";
+    open OUT, ">$out" or die "Error opening $out: $!";
+    my %go;
+    while ( my $line = <GO> ) {
+        if ( $line eq "[Term]\n" ) {
+            if ( exists( $go{'id'} ) ) {
+                print OUT $go{'id'}, ",", $go{'namespace'}, ",", $go{'name'}, ",", $go{'def'}, "\n";
+            }
+            %go = ();
 
-		} else {
-			if ($line ne "\n") {
-				my ($key,$value) = split(/: /, $line);
-				chomp $value if ($value);
-				if ($key=~/^id|^name|^def/) {
-					$go{$key}=$value;
-				}
-			}
-		}
-	}
-	close GO;
-	close OUT;
+        }
+        else {
+            if ( $line ne "\n" ) {
+                my ( $key, $value ) = split( /: /, $line );
+                chomp $value if ($value);
+                if ( $key =~ /^id|^name|^def/ ) {
+                    $go{$key} = $value;
+                }
+            }
+        }
+    }
+    close GO;
+    close OUT;
 }
