@@ -65,11 +65,12 @@ Email j.abbott@imperial.ac.uk
     open OUT, ">$out" or die "Error opening $out: $!";
     my %go;
     while ( my $line = <GO> ) {
-        if ( $line eq "[Term]\n" ) {
+        if ( $line eq "[Term]\n"||$line eq "[Typedef]\n" ) {
             if ( exists( $go{'id'} ) ) {
                 print OUT $go{'id'}, ",", $go{'namespace'}, ",", $go{'name'}, ",", $go{'def'}, "\n";
             }
             %go = ();
+		exit if ($line eq "[Typedef]\n");
 
         }
         else {
