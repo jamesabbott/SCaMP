@@ -91,10 +91,11 @@ Email j.abbott@imperial.ac.uk
     # Parse kegg kos (generated with allocate_kos_to_clusters) - doesn't matter if this is sorted or not
     open KEGG_MAPPING, ">$out/KeggMapping.csv" or die "Error opening $out/kegg_mapping.csv: $!";
     open KOS, $kos or die "Error opening $kos:$!";
+	my $kegg_id=0;
     while ( my $line = <KOS> ) {
         chomp $line;
         my ( $id, $mapping, $ko ) = split( /\t/, $line );
-        print KEGG_MAPPING $cluster_ids{$id}, ",$mapping,$ko\n";
+        print KEGG_MAPPING ++$kegg_id,",", $cluster_ids{$id}, ",$mapping,$ko\n";
     }
     close KEGG_MAPPING;
     close KOS;
@@ -106,11 +107,13 @@ Email j.abbott@imperial.ac.uk
     open GOTERMS,    ">$out/IprscanGoTerms.csv"         or die "Error opening $out/IprscanGoTerms.csv: $!";
     open PW,         ">$out/IprscanPw.csv"              or die "Error opening $out/IprscanPw.csv: $!";
     open CL_DOMAINS, ">$out/Cluster_IprscanDomains.csv" or die "Error opening $out/Cluster_IprscanDomains.csv: $!";
-    open CL_GOTERMS, ">$out/Cluster_IprscanGoTerms.csv" or die "Error opening $out/Cluster_IprscanGoTerms.csv: $!";
+    open CL_GOTERMS, ">$out/Cluster_GoTerms.csv" or die "Error opening $out/Cluster_GoTerms.csv: $!";
     open CL_PW,      ">$out/Cluster_IprscanPw.csv"      or die "Error opening $out/Cluster_IprscanPw.csv: $!";
 
     my $pw_id  = 0;                    # primary key for IprscanPw table...
     my $parser = XML::LibXML->new();
+    my ( %seen_domain, %seen_go, %seen_pw );
+
     foreach my $file (@files) {
         print "Processing $file....\n";
         my $doc = $parser->parse_file($file);
@@ -181,22 +184,30 @@ Email j.abbott@imperial.ac.uk
                 #Output results to csv file...
                 foreach my $id (@ids) {    # may be mulitple ids relating to the same protein, unfortunately
                     foreach my $ipr ( sort keys(%ipr_hits) ) {
-                        print DOMAINS "$ipr,"
-                          . $ipr_hits{$ipr}->{'type'} . ","
-                          . $ipr_hits{$ipr}->{'name'} . ","
-                          . $ipr_hits{$ipr}->{'desc'} . "\n";
+                        unless ( $seen_domain{$ipr} ) {
+                            print DOMAINS "$ipr,"
+                              . $ipr_hits{$ipr}->{'type'} . ","
+                              . $ipr_hits{$ipr}->{'name'} . ","
+                              . $ipr_hits{$ipr}->{'desc'} . "\n";
+                            $seen_domain{$ipr}++;
+                        }
                         print CL_DOMAINS $cluster_ids{$id} . ",$ipr\n";
                     }
 
                     foreach my $go ( sort keys(%go_hits) ) {
-                        print GOTERMS "$go," . $go_hits{$go}->{'go_cat'} . "," . $go_hits{$go}->{'go_name'} . "\n";
-                        print CL_GOTERMS $cluster_ids{$id} . ",$go\n";
+                        #unless ( $seen_go{$go} ) {
+                        #    print GOTERMS "$go," . $go_hits{$go}->{'go_cat'} . "," . $go_hits{$go}->{'go_name'} . "\n";
+                        #    $seen_go{$go}++;
+                        #}
+                        print CL_GOTERMS $cluster_ids{$id} . ",$go,IPRSCAN\n";
                     }
 
                     foreach my $pw ( sort keys(%pw_hits) ) {
-                        print PW ++$pw_id, ",", $pw, ",", $pw_hits{$pw}->{'db'}, ",", $pw_hits{$pw}->{'name'}, "\n";
+                        unless ( $seen_pw{$pw} ) {
+                            print PW ++$pw_id, ",", $pw, ",", $pw_hits{$pw}->{'db'}, ",", $pw_hits{$pw}->{'name'}, "\n";
+                            $seen_pw{$pw}++;
+                        }
                         print CL_PW $cluster_ids{$id}, ",$pw\n";
-
                     }
                 }
             }
