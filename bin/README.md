@@ -197,3 +197,36 @@ sample id.
 1) Extract unassembled reads
 2) Reassemble - runtime = 36 hours, vmax=196Gb (real figures...)
 3) COntig renaming
+
+
+### Gene Prediction
+
+writeme!
+
+Gene predictions should be merged into a single fasta file, with IDs tagged
+with the sample name i.e. sample_041_gene_id_0001
+
+### Clustering
+
+Clusters should be generated using 'cluster_predictions', which translates the
+nucleotide predictions, clusters these using uclust's cluster_fast method
+(outputting centroids, consensus sequences and alignments), and then
+post-parses the uclust outputs to generate csv files for loading into Cluster
+and Prediction tables of the database
+
+i.e. 
+
+`bin/cluster_predicition --in /path/to/merged_prediction.fasta --out /path/to/output_dir --id percent_id`
+
+This will output separate files containing all centroids
+(uclust.$id.centroids.fa), centroids from singletons
+(uclust.$id.singleton.centroids.fa) and centroids from cluster
+(uclust.$id.cluster.centroids.fa).
+
+Following clustering, the resulting centroids should be split into smaller sets
+(1000 sequences each) for parallised functional analysis using 'split_clusters'
+
+`bin/split_clusters --in /path/to/cluster/centroids.fa --out /path/to/output_dir`
+
+Typically this will only be carried out on the cluster centroids, ignoring the singletons.
+
