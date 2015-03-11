@@ -9,6 +9,13 @@
 #
 ######################################################################
 
+#$ -j y
+#$ -cwd
+#$ -m a
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=12:00:00,h_vmem=4G
+
 use warnings;
 use strict;
 
@@ -17,6 +24,9 @@ $|++;
 use Getopt::Long;
 use Pod::Usage;
 use Carp qw(croak);
+use File::Copy;
+use File::Path qw(remove_tree);
+use Cwd;
 
 =pod
 
@@ -26,7 +36,7 @@ use Carp qw(croak);
 
 =head1 SYNOPSIS
 
-    kegg_map_cluster --in /path/to/directory/of/fasta_files --db /path/to/kegg/genes.pep --out /path/to/outfiles
+    kegg_map_cluster --in /path/to/directory/of/fasta_files --out /path/to/outfiles
 
 =head1 DESCRIPTION
 
@@ -51,33 +61,53 @@ Email j.abbott@imperial.ac.uk
 =cut
 
 {
-    my ( $in, $db, $out_dir, $help, $man );
-    GetOptions(
-                'in=s'  => \$in,
-                'db=s'  => \$db,
-                'out=s' => \$out_dir,
-              );
+    my ( $in, $out_dir, $help, $man );
+    GetOptions( 'in=s'  => \$in,
+                'out=s' => \$out_dir, );
 
+    croak "This script should be run via SGE" unless ( $ENV{'SGE_TASK_ID'} );
     croak "\nUnknown argument: @ARGV" if "@ARGV";
     pod2usage( verbose => 2 ) if ($man);
-    pod2usage( verbose => 1 ) if ( $help || !$in || !$db || !$out_dir );
+    pod2usage( verbose => 1 ) if ( $help || !$in || !$out_dir );
 
+ 	my $cwd = cwd();
     mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
 
     opendir IN, $in or croak "Error opening $in directory: $!";
-    my @query_files = grep !/\.\.?\z/, readdir IN;
+	my @query_files = map { $_->[0] }
+      sort { $a->[1] <=> $b->[1] }
+      map { [ $_, /([0-9]+)/ ] }
+      grep !/\.\.?\z/, readdir IN;
     close IN;
 
-    my $usearch = "/usr/biosoft/bin/usearch";
+    my $query = $query_files[ $ENV{'SGE_TASK_ID'} - 1 ];
+    my $out   = $query;
+    $out =~ s/.fa/.out/;
 
-    foreach my $query_file (@query_files) {
-        croak "$in/$query_file does not exist" unless ( -e "$in/$query_file" );
-        my $out_file = $query_file;
-        $out_file .= ".out";
+	print "query = $query...\n";
 
-        print "\nMapping $query_file to $db...\n";
+    my $usearch = "/data/florinash/bin/usearch_64";
+    my $db      = "/data/florinash/reference_data/kegg/kegg.db";
 
-        my $cmd = $usearch . " -ublast $in/$query_file -db $db -evalue 1e-9 -maxhits 1 -threads 8 -blast6out $out_dir/$out_file";
-        system($cmd) == 0 or croak "Error executing $cmd: $!";
-    }
+    my $scratch_dir = "/local_scratch/florinash/";
+    mkdir $scratch_dir or croak "Error creating $scratch_dir: $!" if ( !-d $scratch_dir );
+    $scratch_dir .= "/kegg";
+    mkdir $scratch_dir or croak "Error creating $scratch_dir: $!" if ( !-d $scratch_dir );
+    $scratch_dir .= "/$ENV{'SGE_TASK_ID'}";
+    mkdir $scratch_dir or croak "Error creating $scratch_dir: $!" if ( !-d $scratch_dir );
+
+    chdir $scratch_dir or croak "Error opening $scratch_dir: $!";
+
+    copy( "$in/$query", "$scratch_dir/$query" )  or croak "Error copying $query: $!";
+    copy( "$db",        "$scratch_dir/kegg.db" ) or croak "Error copying $db: $!";
+
+    print "\nMapping $query to $db...\n";
+
+    my $cmd = $usearch . " -ublast $query -db $db -evalue 1e-9 -maxhits 1 -threads 8 -blast6out $out";
+    system($cmd) == 0 or croak "Error executing $cmd: $!";
+
+    copy( $out, "$out_dir/$out" ) or croak "Error copying $out: $!";
+	chdir ($cwd) or croak "Error changing to $cwd: $!";
+
+	remove_tree($scratch_dir) or croak "Error removing $scratch_dir: $!";
 }
