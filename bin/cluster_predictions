@@ -1,4 +1,4 @@
-#!//bin/env perl
+#!/bin/env perl
 
 ######################################################################
 #
@@ -16,7 +16,9 @@ $|++;
 
 use Getopt::Long;
 use Pod::Usage;
+use Bio::SeqIO;
 use Carp qw(croak);
+use Term::ProgressBar;
 
 =pod
 
@@ -65,17 +67,127 @@ Email j.abbott@imperial.ac.uk
     pod2usage( verbose => 1 ) if ( $help || !$in || !$out_dir || !$id );
 
     my $usearch = "/usr/biosoft/bin/usearch";
+    my $transeq = "/usr/biosoft/bin/transeq";
+
+    my $centroids     = "$out_dir/uclust.$id.centroids.fa";
+    my $singleton_fa  = "$out_dir/uclust.$id.singleton.centroids.fa";
+    my $singleton_pfa = "$out_dir/uclust.$id.singleton.centroids.pep.fa";
+    my $cluster_fa    = "$out_dir/uclust.$id.cluster.centroids.fa";
+    my $cluster_pfa   = "$out_dir/uclust.$id.cluster.centroids.pep.fa";
+    my $consensus     = "$out_dir/uclust.$id.consensus.fa";
+    my $uclust        = "$out_dir/uclust.$id.uc";
+    my $sorted_uclust = "$out_dir/uclust.$id.sorted.uc";
+	my $msa       = "$out_dir/uclust.$id.msa";
+
     croak "$in does not exist" unless ( -e $in );
     mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+    mkdir "$out_dir/csv_files" or croak "Error creating $out_dir/csv_files: $!" if ( !-d "$out_dir/csv_files" );
+
+    # store nucleotide and peptide sequences for later formatting into csv files for database
+
+    print "\nTranslating sequences...\n";
+    my $pep = $in;
+    $pep =~ s/.fa/.pep.fa/;
+
+    # transeq appends the translation frame to each ID, but these
+    # should always be 1, and we really want to keep the ID the same, so
+    # pipe these through a replacement...
+
+    open TRANSEQ, "$transeq $in -trim -auto -stdout|" or croak "Error opening piped filehandle: $!";
+    open PEP, ">$pep" or croak "Error opening $pep: $!";
+    while (<TRANSEQ>) {
+        s/_1$//;
+        print PEP;
+    }
+    close PEP;
+    close TRANSEQ;
 
     print "\nSorting sequences by length...\n";
-    my $cmd = $usearch . " -sortbylength $in -output $in.sorted";
+    my $cmd = $usearch . " -sortbylength $pep -output $pep.sorted";
     system($cmd) == 0 or croak "Error executing $cmd: $!";
 
     print "\nClustering sequences...\n";
-    $cmd = $usearch
-      . " -cluster_smallmem $in.sorted -id $id -qmask fastnucleo -strand both -centroids $out_dir/cluster.$id.fa --consout $out_dir/cluster.$id.consensus.fa -uc $out_dir/cluster.$id.uc";
 
-    #	my $cmd = "cd-hit-est -d 100 -i $in -o $out_dir/cluster_$id -n 8  -r 1 -c $id -M 322768 -T 8" ;
+    $cmd = $usearch . " -cluster_fast $pep.sorted -id $id -centroids $centroids -consout $consensus -uc $uclust -msaout $msa";
     system($cmd) == 0 or croak "Error executing $cmd: $!";
+
+    print "\nParsing clusters...\n";
+    print "====================\n";
+
+    print "\n\n\tSorting output....\n";
+    $cmd = "sort -nk2 $uclust > $sorted_uclust";
+    ( system($cmd) == 0 ) or croak "Error sorting $uclust: $!";
+
+    print "\tParsing outputs....\n";
+    my %clusters;
+    open CLUST, $sorted_uclust or die "Error opening $sorted_uclust: $!";
+    while ( my @fields = split( /\t/, <CLUST> ) ) {
+        chomp $fields[9];
+        if ( $fields[0] eq 'C' ) {
+            croak "Error...cluster $fields[8] already exists...\n" if ( $clusters{ $fields[8] } );
+            $clusters{ $fields[8] } = [ $fields[8] ];
+
+        }
+        elsif ( $fields[0] eq 'H' ) {
+            my $arr = $clusters{ $fields[9] };
+            push @$arr, $fields[8];
+            $clusters{ $fields[9] } = $arr;
+        }
+    }
+    close CLUST;
+
+    print "\nParsing predictions....\n";
+    print "=======================\n";
+    my ( %nucl_preds, %pep_preds );
+
+    my $nuclIO = Bio::SeqIO->new( -file => $in, -format => 'fasta' );
+    while ( my $seq = $nuclIO->next_seq() ) {
+        $nucl_preds{ $seq->display_id() } = $seq->seq();
+    }
+
+    my $pepIO = Bio::SeqIO->new( -file => $pep, -format => 'fasta' );
+    while ( my $seq = $pepIO->next_seq() ) {
+        $pep_preds{ $seq->display_id() } = $seq->seq();
+    }
+
+    # Parse cluster centroids, and generate primary key for tebale with $count,
+    # and store id -> $count mapping for looking up cluster ids later on...
+    my $inIO = Bio::SeqIO->new( -format => 'fasta', -file => "$centroids" );
+
+    my $pred_key = 0;
+    print "\tWriting output files...\n";
+    open OUT,  ">$out_dir/csv_files/Cluster.csv"     or croak "Could not open $out_dir/csv_files/Cluster.csv: $!";
+    open PRED, ">$out_dir/csv_files/Prediction.csv" or croak "Could not open $out_dir/csv_files/Prediction.csv: $!";
+    my $singletonIO  = Bio::SeqIO->new( -file => ">$singleton_fa",  -format => 'fasta' );
+    my $singletonpIO = Bio::SeqIO->new( -file => ">$singleton_pfa", -format => 'fasta' );
+    my $clusterIO    = Bio::SeqIO->new( -file => ">$cluster_fa",    -format => 'fasta' );
+    my $clusterpIO   = Bio::SeqIO->new( -file => ">$cluster_pfa",   -format => 'fasta' );
+    my $count        = 0;
+    while ( my $seq = $inIO->next_seq() ) {
+
+        my $centroid = $seq->display_id();
+        my $acc = sprintf( "FMGC%08d", ++$count );
+        my $cluster = $clusters{$centroid};
+        my $members = scalar(@$cluster);
+
+        print OUT "$count,$acc,$centroid,$members\n";    #. $seq->seq(), "\n";
+
+	# output each prediction for the cluster for the Predictions table, and as singleton/cluster fasta files
+        foreach my $pred (@$cluster) {
+            print PRED join( ",", ++$pred_key, $centroid, $pred, $nucl_preds{$pred}, $pep_preds{$pred} ), "\n";
+    	}
+            my $n = Bio::Seq->new( -display_id => $centroid, -seq => $nucl_preds{$centroid} );
+            my $p = Bio::Seq->new( -display_id => $centroid, -seq => $pep_preds{$centroid} );
+            if ( $members == 1 ) {
+                $singletonIO->write_seq($n);
+                $singletonpIO->write_seq($p);
+            }
+            else {
+                $clusterIO->write_seq($n);
+                $clusterpIO->write_seq($p);
+            }
+        }
+    close OUT;
+    close PRED;
+
 }
