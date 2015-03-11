@@ -21,7 +21,7 @@ use strict;
     mkdir $scratch or die "Error creating $scratch: $!" if (!-d $scratch); 
     
     my @dbs = qw(
-	human ncbi_viral_genomes parasites
+	human ncbi_viral_genomes parasites fungi
     );
 
     foreach my $db(@dbs) {
