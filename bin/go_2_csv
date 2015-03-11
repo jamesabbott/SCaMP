@@ -67,9 +67,10 @@ Email j.abbott@imperial.ac.uk
     while ( my $line = <GO> ) {
         if ( $line eq "[Term]\n"||$line eq "[Typedef]\n" ) {
             if ( exists( $go{'id'} ) ) {
-                print OUT $go{'id'}, ",", $go{'namespace'}, ",", $go{'name'}, ",", $go{'def'}, "\n";
+                print OUT $go{'id'}, ",", $go{'namespace'}, ",", $go{'name'}, ",", $go{'obsolete'},",",$go{'def'}, "\n";
             }
             %go = ();
+	$go{'obsolete'}=0;
 		exit if ($line eq "[Typedef]\n");
 
         }
@@ -77,6 +78,15 @@ Email j.abbott@imperial.ac.uk
             if ( $line ne "\n" ) {
                 my ( $key, $value ) = split( /: /, $line );
                 chomp $value if ($value);
+			$value=~s/,/\\\,/g;
+			$value=~s/"//g;
+		if ( $key =~ /^def/) {
+			$value=~s/\[.+\]$//;
+			if ($value=~/OBSOLETE/) {
+				$go{'obsolete'} = 1;
+				$value=~s/OBSOLETE.//;
+			}
+		}
                 if ( $key =~ /^id|^name|^def/ ) {
                     $go{$key} = $value;
                 }
