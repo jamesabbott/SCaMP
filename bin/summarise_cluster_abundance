@@ -1,0 +1,114 @@
+#!/usr/bin/perl
+
+######################################################################
+#
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+# Produces summary of clusters with KOs and sample read-counts following
+# creation of per-sample aligned read-counts with align_reads_to_clusters
+# and parsing of usearch results with allocate_kos_to_clusters
+#
+######################################################################
+
+=pod
+
+=head1 NAME
+
+    summarise_cluster_abundance
+
+=head1 SYNOPSIS
+
+    summarise_cluster_abundance --bwa_dir /path/to/bwa_outputs 
+
+=head1 DESCRIPTION
+
+    Produces a summary table of per-sample abundance counts for clusters
+    from  output of align_reads_to_clustersk
+    
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<bwa_dir>: Output directory containint per-sample direectories of bwa alignemnt results
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak cluck);
+use File::Find::Rule;
+use File::Basename qw(fileparse);
+use Bio::SeqIO;
+
+{
+
+    my ( $bwa_dir, $help, $man );
+    GetOptions(
+                'bwa_dir:s' => \$bwa_dir,
+                'help'      => \$help,
+                'man'       => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$bwa_dir );
+
+    my ( %clusters, @samples );
+    print "Building cluster list from centroid db....\n";
+
+    my $clusterIO = Bio::SeqIO->new( -format => 'fasta', -file => "$bwa_dir/db/centroids" );
+    while ( my $seq = $clusterIO->next_seq() ) {
+        $clusters{ $seq->display_id() } = {};
+    }
+
+    my @count_files = File::Find::Rule->file()->name("*.counts.txt")->in($bwa_dir);
+    foreach my $file (@count_files) {
+        my $sample = fileparse($file);
+        $sample =~ s/.counts.txt//;
+        push @samples, $sample;
+
+        print "Reading abundances for $sample...\n";
+
+        open COUNTS, $file or die "Error oening $file: $!";
+        while ( my ( $cluster, $count ) = split( /\t/, <COUNTS> ) ) {
+            chomp $count;
+            if ( $clusters{$cluster} ) {
+                $clusters{$cluster}->{$sample} = $count;
+            }
+
+        }
+        close COUNTS;
+    }
+
+    print "Outputting summary...\n";
+
+    open OUT, ">$bwa_dir/cluster_abundance.txt" or die "Error opening $bwa_dir/cluster_abundance.txt:$!";
+    @samples = sort(@samples);
+    print OUT "Cluster\t", join( "\t", @samples ), "\n";
+    foreach my $cluster ( sort keys %clusters ) {
+        print OUT "$cluster";
+        foreach my $sample (@samples) {
+            if ( defined( $clusters{$cluster}->{$sample} ) ) {
+                print OUT "\t", $clusters{$cluster}->{$sample};
+            }
+            else {
+                print OUT "\t0";
+            }
+        }
+        print OUT "\n";
+    }
+}
