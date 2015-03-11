@@ -58,11 +58,14 @@ use strict;
 
 use Getopt::Long;
 use Pod::Usage;
-use Carp qw(croak);
+use Carp qw(croak cluck);
 use File::Path qw(rmtree);
 use Bio::SeqIO;
 use Bio::DB::EUtilities;
 use YAML::XS qw(Load);
+use LWP;
+use XML::Simple;
+use HTML::Entities;
 use Net::FTP::Recursive;
 use Parallel::ForkManager;
 use DateTime;
@@ -109,13 +112,13 @@ use DateTime;
         }
     }
 
-    $in_dir = download( $db, $db_data, $in_dir,$date ) if ($download);
+    $in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
     uncompress($in_dir) if ($download);
     reformat( $db, $format, $in_dir, $out_dir );
 
     print "\nBuilding BWA index...\n";
     my $cmd = "$bwa index $out_dir/$db";
-    system($cmd)==0 or die "Error executing $cmd:$!";
+    system($cmd) == 0 or die "Error executing $cmd:$!";
 
 }
 
@@ -139,14 +142,14 @@ sub download {
     my $db      = shift;
     my $db_data = shift;
     my $dir     = shift;
-    my $date = shift;
+    my $date    = shift;
 
     my $path;
 
     foreach my $dat (@$db_data) {
         if ( $dat->{'type'} && $dat->{'type'} eq 'ftp' ) {
             print "\nDownloading $db via ftp...\n";
-            $path = ftp_download( $db, $db_data, $dir,$date );
+            $path = ftp_download( $db, $db_data, $dir, $date );
         }
         elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez' ) {
             print "\nDownloading $db via entrez...\n";
@@ -155,6 +158,14 @@ sub download {
         elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez_accessions' ) {
             print "\nDownloading $db via entrez accessions...\n";
             $path = entrez_accession_download( $db, $db_data, $dir );
+        }
+        elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez_assembly' ) {
+            print "\nDownloading $db via entrez assemblies...\n";
+            $path = entrez_assembly_download( $db, $db_data, $dir );
+        }
+        else {
+            print "Unknown type: " . $dat->{'type'} . "\n";
+            #exit;
         }
     }
     return ($path);
@@ -180,7 +191,7 @@ sub ftp_download {
     my $db      = shift;
     my $db_data = shift;
     my $dir     = shift;
-    my $date = shift;
+    my $date    = shift;
 
     my ( $ftp_host, $ftp_dir, $file_pattern, $format );
     foreach my $val (@$db_data) {
@@ -213,16 +224,17 @@ sub ftp_download {
     my $release;
 
     if ( $rem_dir =~ /release-([0-9]+)/ ) {
-	$release = $1;
-    } else {
-	$release = $date;
+        $release = $1;
     }
-    
+    else {
+        $release = $date;
+    }
+
     #die "Could not parse release version from $rem_dir" unless ($release);
 
     mkdir("$dir/$release") or croak "Could not mkdir $dir/$release: $!" if ( !-d "$dir/$release" );
     chdir("$dir/$release") or croak "Could not chdir to $dir/$release:$!";
-    $file_pattern=~s/_release_/$release/;
+    $file_pattern =~ s/_release_/$release/;
     $ftp->rget( MatchFiles => $file_pattern, FlattenTree => 1 );
 
     return ("$dir/$release");
@@ -373,52 +385,138 @@ sub entrez_accession_download {
                 $start =~ s/^0+//;
                 $end   =~ s/^0+//;
                 for ( my $i = $start ; $i <= $end ; $i++ ) {
-		    my ($acc);
-		    if (length($start)==8) {
-			$acc = sprintf( "%s%09s", $prefix, $i );
-		    } elsif (length($start)==7) {
-			$acc = sprintf( "%s%08s", $prefix, $i );
-		    } else {
-			croak "Unhandled accession length: $wgs->value()";
-		    }
+                    my ($acc);
+                    if ( length($start) == 8 ) {
+                        $acc = sprintf( "%s%09s", $prefix, $i );
+                    }
+                    elsif ( length($start) == 7 ) {
+                        $acc = sprintf( "%s%08s", $prefix, $i );
+                    }
+                    else {
+                        croak "Unhandled accession length: $wgs->value()";
+                    }
                     push @wgs_accessions, $acc;
                 }
             }
         }
-	# retreive sequences in batches of 500....
-	    my $retry = 0;
-	    my ( $retmax, $retstart ) = ( 500, 0 );
+
+        # retreive sequences in batches of 500....
+        my $retry = 0;
+        my ( $retmax, $retstart ) = ( 500, 0 );
         my $file = "$dir/$db." . $seq->display_id . ".gb";
 
-	open( my $out, '>', "$file" ) || die "Can't open file:$!";
+        open( my $out, '>', "$file" ) || die "Can't open file:$!";
 
-  RETRIEVE_SEQS:
-    while ( $retstart < $#wgs_accessions) {
-	my @query_accs = @wgs_accessions[$retstart..($retstart+($retmax-1))];
-	print "\tGetting accessions $retstart -> " . ($retstart+($retmax-1)) . "....\n";
-        my $wgs_factory = Bio::DB::EUtilities->new(
-                                                    -eutil   => 'efetch',
-                                                    -db      => 'nucleotide',
-                                                    -rettype => 'gb',
-                                                    -email   => $email,
-                                                    -id      => \@query_accs,
-                                                  );
-        eval {
-            $wgs_factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
-        };
-        if ($@) {
-            die "Server error: $@.  Try again later" if $retry == 5;
-            print STDERR "Server error, redo #$retry\n";
-            $retry++ && redo RETRIEVE_SEQS;
+      RETRIEVE_SEQS:
+        while ( $retstart < $#wgs_accessions ) {
+            my @query_accs = @wgs_accessions[ $retstart .. ( $retstart + ( $retmax - 1 ) ) ];
+            print "\tGetting accessions $retstart -> " . ( $retstart + ( $retmax - 1 ) ) . "....\n";
+            my $wgs_factory = Bio::DB::EUtilities->new(
+                                                        -eutil   => 'efetch',
+                                                        -db      => 'nucleotide',
+                                                        -rettype => 'gb',
+                                                        -email   => $email,
+                                                        -id      => \@query_accs,
+                                                      );
+            eval {
+                $wgs_factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
+            };
+            if ($@) {
+                die "Server error: $@.  Try again later" if $retry == 5;
+                print STDERR "Server error, redo #$retry\n";
+                $retry++ && redo RETRIEVE_SEQS;
+            }
+            $retstart += $retmax;
         }
-        $retstart += $retmax;
-    }
 
-    close $out;
+        close $out;
     }
     return ($dir);
 }
 
+######################################################################
+#
+# entrez_assembly_download
+#
+# Downloads database consisting of refseq/genbank assembly IDs
+# Looks up WGS accession for each assembly, then passes these to
+# entrez_accession_download
+#
+# required params: $ (db name)
+#                  $ (hasref of dbdata)
+#                  $ (base dir to write database to)
+#
+# returns:         $ (path database written to)
+#
+######################################################################
+
+sub entrez_assembly_download {
+
+    my $db      = shift;
+    my $db_data = shift;
+    my $dir     = shift;
+
+    my ( $query, $format, $accessions );
+    foreach my $val (@$db_data) {
+        if ( $val->{'entrez_query'} ) {
+            $query = $val->{'entrez_query'};
+        }
+        elsif ( $val->{'format'} ) {
+            $format = $val->{'format'};
+        }
+        elsif ( $val->{'accessions'} ) {
+            $accessions = $val->{'accessions'};
+        }
+    }
+
+    my @wgs_accessions;
+    my $ua = LWP::UserAgent->new;
+    foreach my $accession (@$accessions) {
+        print "Checking $accession...\n";
+        my $assembly_url = "http://www.ncbi.nlm.nih.gov/assembly/$accession/?report=xml&format=text";
+        my $req          = HTTP::Request->new( GET => $assembly_url );
+        my $res          = $ua->request($req);
+        if ( $res->is_success() ) {
+
+            my ( $xml, $xml_ref );
+            eval {
+                $xml     = decode_entities( $res->content() );
+                $xml_ref = XMLin($xml);
+            };
+            my $wgs_short;
+
+            if ( ref( $xml_ref->{'DocumentSummary'} ) eq 'ARRAY' ) {
+                $wgs_short = $xml_ref->{'DocumentSummary'}->[0]->{'WGS'};
+            }
+            else {
+                $wgs_short = $xml_ref->{'DocumentSummary'}->{'WGS'};
+            }
+
+            if ( $wgs_short && $wgs_short =~ /([A-Z]{4})([0-9]{2})/ ) {
+                my $prefix = $1;
+                my $ver    = sprintf( "%u", $2 );
+                my $acc    = $prefix . '0' x 8 . "." . $ver;
+                push @wgs_accessions, $acc;
+            } else {
+		warn "WGS accession could not be found for assembly $accession";
+		}
+        }
+        else {
+            croak "Could not retrieve $assembly_url: $!";
+        }
+    }
+	my @new_db_data;
+    foreach my $val (@$db_data) {
+        if ( $val->{'accessions'} ) {
+            $val->{'accessions'} = \@wgs_accessions;;
+        } 
+	push @new_db_data, $val;
+	}
+	print "...done\n\n";
+    $dir = entrez_accession_download( $db, \@new_db_data, $dir );
+
+    return ($dir);
+}
 ######################################################################
 #
 # uncompress
@@ -569,4 +667,37 @@ patric:
   - ftpdir: /patric2/genomes
   - file_pattern: RefSeq.gbf$
   - format: genbank
+fungi:
+  - type: entrez_assembly
+  - format: genbank
+  - accessions:
+    - GCA_000006275.2
+    - GCA_000600275.1
+    - GCA_000280675.1
+    - GCA_000149445.2 
+    - GCA_000026945.1 
+    - GCA_000002545.2 
+    - GCA_000149425.1 
+    - GCA_000747785.1 
+    - GCA_000764455.1
+    - GCA_000003835.1
+    - GCA_000182765.1
+    - GCA_000006335.2
+    - GCA_000091045.1
+    - GCA_000230625.1
+    - GCA_000149955.1 
+    - GCA_000743665.1
+    - GCA_000149585.1 
+    - GCA_000733625.1
+    - GCA_000181695.1
+    - GCA_000169275.1
+    - GCA_000587855.1 
+    - GCA_000150735.2
+    - GCA_000513335.1
+    - GCA_000222205.1
+    - GCA_000931965.1
+    - GCA_000146045.2
+    - GCA_000299215.2
+    - GCA_000002525.1
+
 
