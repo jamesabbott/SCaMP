@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+
+######################################################################
+# 
+# $HeadURL$
+# $Author$
+# $Revision$
+# $Date$
+#
+######################################################################
+
+
+=head1 NAME
+
+    count_trimmed_reads
+
+=head1 SYNOPSIS
+
+    count_trimmed_reads --dir  /path/to/trimmed_dir
+
+=head1 DESCRIPTION
+
+	Reports per-sample read counts following trimming with trim galore on data within the specified directory
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<dir>: trim_galore output directory
+
+=back
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use File::Find::Rule;
+use Bio::SeqIO;
+use Pod::Usage;
+use Getopt::Long;
+use Carp qw(croak);
+
+
+{
+    my ( $dir, $help, $man);
+    GetOptions(
+                'dir=s' => \$dir,
+                'man'       => \$man,
+                'help'      => \$help,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ( $help || !$dir);
+
+    my @files = File::Find::Rule->file()->name("*R1_val_1.fq.gz")->in($dir);
+    @files = map { $_->[0] }
+      sort { $a->[1] cmp $b->[1] }
+      map { [ $_, /trimmed\/([A-Z0-9_\-]+)/ ] } @files;
+
+    foreach my $file (@files) {
+	my $sample = $1 if($file=~/trimmed\/([A-Z0-9_\-]+)/);   
+	my $count = `zcat $file \| echo \$((\`wc -l\`/4 ))`;
+	print "$sample\t$count";
+    }
+
+}
