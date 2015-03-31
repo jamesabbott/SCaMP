@@ -11,7 +11,6 @@
 
 #$ -j y
 #$ -cwd
-#$ -m a
 #$ -pe smp 8
 #$ -R y
 #$ -l h_rt=08:00:00,h_vmem=2G
@@ -67,7 +66,7 @@ use Pod::Usage;
 use File::Copy;
 use File::Path qw(remove_tree);
 use Carp qw(croak);
-use Env::Modulecmd qw(MetaPhlAn);
+use Env::Modulecmd qw(MetaPhlAn-2.0);
 
 {
     my $task;
@@ -77,7 +76,8 @@ use Env::Modulecmd qw(MetaPhlAn);
     print "Arguments are @ARGV\n";
 
     my ( $in_dir, $out_dir, $help, $man );
-    my $db = "/local_scratch/florinash_dbs/metaphlan_bowtie2db/mpa";
+    my $db  = "/local_scratch/florinash_dbs/metaphlan_2.0/mpa_v20_m200";
+    my $pkl = "/local_scratch/florinash_dbs/metaphlan_2.0/mpa_v20_m200.pkl";
     GetOptions(
                 'in_dir=s'  => \$in_dir,
                 'out_dir=s' => \$out_dir,
@@ -125,11 +125,8 @@ use Env::Modulecmd qw(MetaPhlAn);
     mkdir $scratch_dir or die "mkdir failed: $!";
     chdir $scratch_dir or die "chdir failed: $!";
 
-    my $cmd = "/usr/bin/gunzip -c $in_dir/$sample/$pair1 $in_dir/$sample/$pair2 | gzip > $scratch_dir/$sample.fastq.gz";
-    system("$cmd") == 0 or croak "Error merging gzipped read files; $!";
-
-    $cmd =
-"metaphlan.py --bowtie2db $db --bt2_ps very-sensitive --input_type multifastq --nproc 8 -biom $scratch_dir/$sample.biom $scratch_dir/$sample.fastq.gz $scratch_dir/$sample.txt";
+    my $cmd =
+"metaphlan2.py $in_dir/$sample/$pair1,$in_dir/$sample/$pair2 --mpa_pkl $pkl --bowtie2db $db --bt2_ps very-sensitive --input_type multifastq --nproc 8 --biom $scratch_dir/$sample.biom --bowtie2out $scratch_dir/$sample.bowtie.bz2 > $scratch_dir/$sample.txt";
     system("$cmd") == 0 or croak "Error running $cmd; $!";
 
     mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
