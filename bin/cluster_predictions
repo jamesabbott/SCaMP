@@ -77,10 +77,11 @@ Email j.abbott@imperial.ac.uk
     my $consensus     = "$out_dir/uclust.$id.consensus.fa";
     my $uclust        = "$out_dir/uclust.$id.uc";
     my $sorted_uclust = "$out_dir/uclust.$id.sorted.uc";
-	my $msa       = "$out_dir/uclust.$id.msa";
+    my $msa           = "$out_dir/uclust.$id.msa";
+    my $cmd;
 
     croak "$in does not exist" unless ( -e $in );
-    mkdir $out_dir or croak "Error creating $out_dir: $!" if ( !-d $out_dir );
+    mkdir $out_dir             or croak "Error creating $out_dir: $!"           if ( !-d $out_dir );
     mkdir "$out_dir/csv_files" or croak "Error creating $out_dir/csv_files: $!" if ( !-d "$out_dir/csv_files" );
 
     # store nucleotide and peptide sequences for later formatting into csv files for database
@@ -108,7 +109,8 @@ Email j.abbott@imperial.ac.uk
 
     print "\nClustering sequences...\n";
 
-    $cmd = $usearch . " -cluster_fast $pep.sorted -id $id -centroids $centroids -consout $consensus -uc $uclust -msaout $msa";
+    $cmd = $usearch
+      . " -cluster_fast $pep.sorted -id $id -centroids $centroids -consout $consensus -uc $uclust -msaout $msa";
     system($cmd) == 0 or croak "Error executing $cmd: $!";
 
     print "\nParsing clusters...\n";
@@ -138,16 +140,18 @@ Email j.abbott@imperial.ac.uk
 
     print "\nParsing predictions....\n";
     print "=======================\n";
-    my ( %nucl_preds, %pep_preds );
+    my ( %nucl_preds, %pep_preds, %nucl_lengths, %pep_lengths );
 
     my $nuclIO = Bio::SeqIO->new( -file => $in, -format => 'fasta' );
     while ( my $seq = $nuclIO->next_seq() ) {
-        $nucl_preds{ $seq->display_id() } = $seq->seq();
+        $nucl_preds{ $seq->display_id() }   = $seq->seq();
+        $nucl_lengths{ $seq->display_id() } = $seq->length();
     }
 
     my $pepIO = Bio::SeqIO->new( -file => $pep, -format => 'fasta' );
     while ( my $seq = $pepIO->next_seq() ) {
-        $pep_preds{ $seq->display_id() } = $seq->seq();
+        $pep_preds{ $seq->display_id() }   = $seq->seq();
+        $pep_lengths{ $seq->display_id() } = $seq->length();
     }
 
     # Parse cluster centroids, and generate primary key for tebale with $count,
@@ -156,7 +160,7 @@ Email j.abbott@imperial.ac.uk
 
     my $pred_key = 0;
     print "\tWriting output files...\n";
-    open OUT,  ">$out_dir/csv_files/Cluster.csv"     or croak "Could not open $out_dir/csv_files/Cluster.csv: $!";
+    open OUT,  ">$out_dir/csv_files/Cluster.csv"    or croak "Could not open $out_dir/csv_files/Cluster.csv: $!";
     open PRED, ">$out_dir/csv_files/Prediction.csv" or croak "Could not open $out_dir/csv_files/Prediction.csv: $!";
     my $singletonIO  = Bio::SeqIO->new( -file => ">$singleton_fa",  -format => 'fasta' );
     my $singletonpIO = Bio::SeqIO->new( -file => ">$singleton_pfa", -format => 'fasta' );
@@ -166,27 +170,30 @@ Email j.abbott@imperial.ac.uk
     while ( my $seq = $inIO->next_seq() ) {
 
         my $centroid = $seq->display_id();
-        my $acc = sprintf( "FMGC%08d", ++$count );
-        my $cluster = $clusters{$centroid};
-        my $members = scalar(@$cluster);
+        my $acc      = sprintf( "FMGC%08d", ++$count );
+        my $cluster  = $clusters{$centroid};
+        my $members  = scalar(@$cluster);
 
         print OUT "$count,$acc,$centroid,$members\n";    #. $seq->seq(), "\n";
 
-	# output each prediction for the cluster for the Predictions table, and as singleton/cluster fasta files
+        # output each prediction for the cluster for the Predictions table, and as singleton/cluster fasta files
         foreach my $pred (@$cluster) {
-            print PRED join( ",", ++$pred_key, $centroid, $pred, $nucl_preds{$pred}, $pep_preds{$pred} ), "\n";
-    	}
-            my $n = Bio::Seq->new( -display_id => $centroid, -seq => $nucl_preds{$centroid} );
-            my $p = Bio::Seq->new( -display_id => $centroid, -seq => $pep_preds{$centroid} );
-            if ( $members == 1 ) {
-                $singletonIO->write_seq($n);
-                $singletonpIO->write_seq($p);
-            }
-            else {
-                $clusterIO->write_seq($n);
-                $clusterpIO->write_seq($p);
-            }
+            print PRED join( ",",
+                             ++$pred_key, $centroid, $pred, $nucl_preds{$pred}, $nucl_lengths{$pred}, $pep_preds{$pred},
+                             $pep_lengths{$pred} ),
+              "\n";
         }
+        my $n = Bio::Seq->new( -display_id => $centroid, -seq => $nucl_preds{$centroid} );
+        my $p = Bio::Seq->new( -display_id => $centroid, -seq => $pep_preds{$centroid} );
+        if ( $members == 1 ) {
+            $singletonIO->write_seq($n);
+            $singletonpIO->write_seq($p);
+        }
+        else {
+            $clusterIO->write_seq($n);
+            $clusterpIO->write_seq($p);
+        }
+    }
     close OUT;
     close PRED;
 
