@@ -11,11 +11,10 @@
 
 #$ -j y
 #$ -cwd
-#$ -m a
 #$ -pe smp 8
 #$ -R y
 #$ -l h_rt=08:00:00,h_vmem=2G
-#$ -t 1-73
+#$ -t 1-314
 
 =pod
 
@@ -91,6 +90,7 @@ my $picard_dir = "/usr/biosoft/cluster/picard/current/";
                 'viral' => '/local_scratch/florinash_dbs/ncbi_viral_genomes/ncbi_viral_genomes',
                 'plants' => '/local_scratch/florinash_dbs/ensembl_plants/ensembl_plants',
                 'parasites' => '/local_scratch/florinash_dbs/parasites/parasites',
+		'fungi' => '/local_scratch/florinash_dbs/fungi/fungi',
               );
 
     my ( $in_dir, $out_dir, $db_name, $filter, $help, $man, %tax_info, %tax_ids );
