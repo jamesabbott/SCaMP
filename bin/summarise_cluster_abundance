@@ -67,12 +67,15 @@ use Bio::SeqIO;
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$bwa_dir );
 
-    my ( %clusters, @samples );
+    my ( %clusters, %lengths, @samples);
+    my $max=0;
+
     print "Building cluster list from centroid db....\n";
 
     my $clusterIO = Bio::SeqIO->new( -format => 'fasta', -file => "$bwa_dir/db/centroids" );
     while ( my $seq = $clusterIO->next_seq() ) {
         $clusters{ $seq->display_id() } = {};
+	$lengths{ $seq->display_id() } = $seq->length();
     }
 
     my @count_files = File::Find::Rule->file()->name("*.counts.txt")->in($bwa_dir);
@@ -88,25 +91,28 @@ use Bio::SeqIO;
             chomp $count;
             if ( $clusters{$cluster} ) {
                 $clusters{$cluster}->{$sample} = $count;
+		$max = $count if ($count>$max);
             }
 
         }
         close COUNTS;
     }
 
+	print "Max = $max\n";
+	exit;
     print "Outputting summary...\n";
 
-    open OUT, ">$bwa_dir/cluster_abundance.txt" or die "Error opening $bwa_dir/cluster_abundance.txt:$!";
+    open OUT, ">$bwa_dir/cluster_abundance.csv" or die "Error opening $bwa_dir/cluster_abundance.csv:$!";
     @samples = sort(@samples);
-    print OUT "Cluster\t", join( "\t", @samples ), "\n";
+    print OUT "Cluster,", join( ",", @samples ), "\n";
     foreach my $cluster ( sort keys %clusters ) {
         print OUT "$cluster";
         foreach my $sample (@samples) {
             if ( defined( $clusters{$cluster}->{$sample} ) ) {
-                print OUT "\t", $clusters{$cluster}->{$sample};
+                print OUT ",", $clusters{$cluster}->{$sample};
             }
             else {
-                print OUT "\t0";
+                print OUT ",0";
             }
         }
         print OUT "\n";
