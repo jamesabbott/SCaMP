@@ -20,6 +20,7 @@ use Getopt::Long;
 use Carp qw(croak);
 use Bio::SeqIO;
 use DBI;
+use File::Path qw(rmtree);
 
 =pod
 
@@ -71,6 +72,10 @@ Email j.abbott@imperial.ac.uk
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db || !$out);
 
+
+	rmtree $out if (-d $out);
+	mkdir $out or croak "Could not create $out: $!";
+
 	print "Generating nucleotide centroid database...\n";
 
 	my $outIO = Bio::SeqIO->new(-file=>">$out/centroids", -format => 'fasta');
@@ -78,13 +83,13 @@ Email j.abbott@imperial.ac.uk
     my $dsn = "DBI:mysql:host=$host;port=$port;db=$db";
     my $dbh = DBI->connect( $dsn, $user, $password, { RaiseError => 1 } );
 
-	my $sth = $dbh->prepare("SELECT ClusterID, Cluster.Centroid, Sequence FROM Cluster  
+	my $sth = $dbh->prepare("SELECT ClusterID, Cluster.Centroid, NuclSeq FROM Cluster  
 		INNER JOIN Prediction on Cluster.Centroid = Prediction.Name", 
 		{mysql_user_result => 1});
 	$sth->execute();
 
 	while (my ($id, $centroid, $nucl_seq) = ($sth->fetchrow_array())[0..2]) {
-		my $seq = Bio::Seq->new(-display_id => $centroid, seq => $nucl_seq);
+		my $seq = Bio::Seq->new(-display_id => $id, seq => $nucl_seq);
 		$outIO->write_seq($seq);
 	}
 
