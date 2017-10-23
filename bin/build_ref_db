@@ -84,7 +84,7 @@ use DateTime;
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
     $out_dir = $out_dir . "/$db/$date";
-    $in_dir = $dir . $db . "/" . $date . "/raw_data" if ($download);
+    $in_dir = $in_dir . $db . "/" . $date . "/raw_data" if ($download);
 
     mkdir $out_dir or croak "Error creating $out_dir: $!" unless ( -d $out_dir );
     rmtree("$out_dir/split") if ( -d "$out_dir/split" );
