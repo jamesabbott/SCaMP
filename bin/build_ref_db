@@ -1,14 +1,5 @@
 #!/usr/bin/perl
 
-######################################################################
-#
-# $HeadURL$
-# $Author$
-# $Revision$
-# $Date$
-#
-######################################################################
-
 =pod
 
 =head1 NAME
@@ -39,7 +30,9 @@
 
 =item B<download>: Download database from defined configuration
 
-=item B<in_dir>: Location of database to format - only used if download argument not specified
+=item B<in_dir>: Location of database to reformat - only used if download argument not specified
+
+=item B<out_dir>: Location to output database. Individual databases will be stored within named subdirectories of this directory
 
 =item B<help>: Display help text
 
@@ -72,26 +65,25 @@ use DateTime;
 
 {
 
-    my ( $format, $db, $in_dir, $help, $man, $db_data );
+    my ( $format, $db, $in_dir, $out_dir, $help, $man, $db_data );
     my $download = 0;
     GetOptions(
-                'db:s'     => \$db,
-                'format:s' => \$format,
-                'download' => \$download,
-                'in_dir:s' => \$in_dir,
-                'help'     => \$help,
-                'man'      => \$man,
+                'db:s'      => \$db,
+                'format:s'  => \$format,
+                'download'  => \$download,
+                'in_dir:s'  => \$in_dir,
+                'out_dir:s' => \$out_dir,
+                'help'      => \$help,
+                'man'       => \$man,
               );
 
     croak "\nUnknown argument: @ARGV" if "@ARGV";
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db );
 
-    my $bwa     = "/usr/biosoft/packages/bwa/current/bwa";
-    my $dir     = "/data/florinash/reference_data/";
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
-    my $out_dir = $dir . $db . "/$date";
+    $out_dir = $out_dir . "/$db/$date";
     $in_dir = $dir . $db . "/" . $date . "/raw_data" if ($download);
 
     mkdir $out_dir or croak "Error creating $out_dir: $!" unless ( -d $out_dir );
@@ -117,7 +109,7 @@ use DateTime;
     reformat( $db, $format, $in_dir, $out_dir );
 
     print "\nBuilding BWA index...\n";
-    my $cmd = "$bwa index $out_dir/$db";
+    my $cmd = "bwa index $out_dir/$db";
     system($cmd) == 0 or die "Error executing $cmd:$!";
 
 }
