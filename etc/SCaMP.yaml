@@ -4,9 +4,53 @@
 database_dir: /medbio/Reference_Data/databases/ScaMP
 
 databases:
-  - human
-  - viruses
-  - parasites
-  - fungi
-  - plants
-
+  plants:
+    - type: ftp
+    - ftphost: ftp.ensemblgenomes.org
+    - ftpdir: /pub/plants/current/embl
+    - file_pattern: .dat.gz$
+    - format: embl
+  viruses:
+    - type: entrez
+    - format: genbank
+    - entrez_query: '"Viruses"[Organism] AND srcdb_refseq[PROP] NOT "cellular organisms"[Organism] NOT AC_000001[PACC] : AC_999999[PACC]'
+  parasites:
+    - type: entrez_accessions
+    - format: genbank
+    - accessions:
+      - CABX00000000.1
+      - BX526834.1
+      - AAEE00000000.1
+      - AAEL00000000.2
+      - AAFB00000000.2
+      - ACGJ00000000.1
+      - AACB00000000.2
+      - CBLN000000000.1
+      - CBLO000000000.1
+      - ABIR00000000.2
+      - CBXK000000000.1
+  patric:
+    - type: ftp
+    - ftphost: ftp.patricbrc.org
+    - ftpdir: /patric2/genomes
+    - file_pattern: RefSeq.gbf$
+    - format: genbank
+  fungi:
+    - type: entrez_assembly
+    - format: genbank
+    - accessions:
+      - GCA_000006275.2
+      - GCA_000600275.1
+      - GCA_000280675.1
+      - GCA_000149445.2 
+      - GCF_000026945.1 
+      - GCA_000002545.2 
+      - GCA_000149425.1 
+      - GCA_000747785.1 
+      - GCA_000764455.1
+      - GCA_000003835.1
+      - GCA_000182765.1
+      - GCA_000006335.2
+      - GCA_000091045.1
+      - GCA_000230625.1
+      - GCA_000149955.1 
