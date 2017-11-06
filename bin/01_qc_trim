@@ -1,0 +1,114 @@
+#!/bin/env perl
+
+######################################################################
+#
+# qc_trim
+#
+# Cluster-based quality trimming of metagenomic reads with trim-galore
+#
+# Expects to find paired demulitplexed reads named .fq.gz or fastq.gz in $orig_dir
+#
+# Reuse with other data will probably require adjustment of regex on
+# line 36 where sampleid_barcode is parsed...
+#
+######################################################################
+
+use warnings;
+use strict;
+
+use File::Find::Rule;
+use File::Basename;
+use File::Copy qw(copy move);
+use File::Copy::Recursive qw(dirmove);
+use File::Path;
+
+{
+
+    # thresholds for quality score and min read length...
+    my $qual   = 20;
+    my $length = 50;
+    my $task   = $ENV{'SGE_TASK_ID'} - 1;
+    die "SGE_TASK_ID is not defined" unless defined($task);
+
+    my $trim_galore = "/usr/biosoft/cluster/trim_galore/current/trim_galore";
+    my $orig_dir    = "/data/florinash/original_data/metagenome";
+    my $out_dir     = "/data/florinash/trimmed/";
+    my $scratch_dir = "/local_scratch/florinash/";
+    my %barcodes = (
+                     'ATCACG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGATCTCGTATGCCGTCTTCTGCTTG',
+                     'CGATGT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCGATGTATCTCGTATGCCGTCTTCTGCTTG',
+                     'TTAGGC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTTAGGCATCTCGTATGCCGTCTTCTGCTTG',
+                     'TGACCA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTGACCAATCTCGTATGCCGTCTTCTGCTTG',
+                     'ACAGTG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACAGTGATCTCGTATGCCGTCTTCTGCTTG',
+                     'GCCAAT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGCCAATATCTCGTATGCCGTCTTCTGCTTG',
+                     'CAGATC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCAGATCATCTCGTATGCCGTCTTCTGCTTG',
+                     'ACTTGA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACTTGAATCTCGTATGCCGTCTTCTGCTTG',
+                     'GATCAG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGATCAGATCTCGTATGCCGTCTTCTGCTTG',
+                     'TAGCTT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTAGCTTATCTCGTATGCCGTCTTCTGCTTG',
+                     'GGCTAC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGGCTACATCTCGTATGCCGTCTTCTGCTTG',
+                     'CTTGTA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCTTGTAATCTCGTATGCCGTCTTCTGCTTG',
+                     'AGTCAA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACAGTCAACAATCTCGTATGCCGTCTTCTGCTTG',
+                     'AGTTCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACAGTTCCGTATCTCGTATGCCGTCTTCTGCTTG',
+                     'ATGTCA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATGTCAGAATCTCGTATGCCGTCTTCTGCTTG',
+                     'CCGTCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCCGTCCCGATCTCGTATGCCGTCTTCTGCTTG',
+                     'GTCCGC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTCCGCACATCTCGTATGCCGTCTTCTGCTTG',
+                     'GTGAAA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTGAAACGATCTCGTATGCCGTCTTCTGCTTG',
+                     'GTGGCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTGGCCTTATCTCGTATGCCGTCTTCTGCTTG',
+                     'GTTTCG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTTTCGGAATCTCGTATGCCGTCTTCTGCTTG',
+                     'CGTACG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCGTACGTAATCTCGTATGCCGTCTTCTGCTTG',
+                     'GAGTGG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGAGTGGATATCTCGTATGCCGTCTTCTGCTTG',
+                     'ACTGAT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACTGATATATCTCGTATGCCGTCTTCTGCTTG',
+                     'ATTCCT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATTCCTTTATCTCGTATGCCGTCTTCTGCTTG',
+                   );
+
+    print "Hostname = " . $ENV{'HOSTNAME'} . "\n";
+    mkdir $scratch_dir or die "Error creating $scratch_dir" if ( !-d $scratch_dir );
+
+    my %samples;
+    my @files = File::Find::Rule->file()->name("*.f(ast)?q.gz")->in($orig_dir);
+    foreach my $file (@files) {
+        if ( $file =~ /\/([A-Z0-9\-_]+_[ACTG]{6})_L[0-9]+_R[12].fastq.gz/ ) {
+            $samples{$1}++;
+        }
+        else {
+            warn "Error parsing $file...\n";
+        }
+    }
+
+    my @samples = sort( keys(%samples) );
+    my $sample  = $samples[$task];
+
+    # allow for rerunning only incomplete jobs...
+    if ( !-d "$out_dir/$sample" ) {
+        my @job_files = grep /$sample/, @files;
+
+        $scratch_dir .= "$sample/";
+        mkdir $scratch_dir or die "Error creating $scratch_dir" if ( !-d $scratch_dir );
+        chdir $scratch_dir or die "Error changing to $scratch_dir: $!";
+
+        foreach my $file (@job_files) {
+            my $basename = fileparse($file);
+            copy( $file, "$scratch_dir/$basename" ) or die "Error copying $file -> $scratch_dir/$basename:$!";
+        }
+
+        my $read1 = basename( ( grep /R1.fastq.gz/, @job_files )[0] );
+        my $read2 = basename( ( grep /R2.fastq.gz/, @job_files )[0] );
+
+        my $barcode = $1 if ( $sample =~ /_([ACTG]{6})$/ );
+        die "Error parsing barcode from $sample" unless defined($barcode);
+
+        my $adapter1 = $barcodes{$barcode};
+        my $adapter2 = 'AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT';
+
+        if ( !defined($adapter1) ) {
+            $adapter1 = 'GATCGGAAGAGCACACGTCTGAACTCCAGTCAC' . $barcode . 'ATCTCGTATGCCGTCTTCTGCTTG';
+        }
+        my $cmd =
+          "$trim_galore --fastqc -q $qual --length $length -a $adapter1 -a2 $adapter2 --gzip --paired $read1 $read2";
+        system($cmd) == 0 or die "Error running $cmd:$!";
+
+        chdir ".." or die "Error chdiring: $!";
+        dirmove( $sample, "$out_dir/$sample" ) or die "Error moving results: $!";
+    }
+
+}
