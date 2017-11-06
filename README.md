@@ -1,16 +1,28 @@
-<!---
-************************************************************
-
-  $HeadURL$ 
-  $Author$ 
-  $Revision$
-  $Date $ 
-
-************************************************************
--->
 # Florinash Metagenome Pipeline
 
 This is a set of scripts for analysis of metagenomic samples. 
+
+## Installation
+
+The software can be installed from git using the command:
+
+git clone https://github.com/jamesabbott/ScaMP.git
+
+###Perl Modules
+
+A number of non-standard perl modules need to be installed prior to running the
+software:
+
+1. BioPerl
+2. Bio::DB::EUtilities
+3. DateTime
+4. HTML::Entities
+5. LWP
+6. Net::FTP::Recursive
+7. Parallel::ForkManager
+8. XML::Simple
+9. YAML::XS
+
 
 ## Reference Databases
 
@@ -32,21 +44,21 @@ This example has no strain defined, so this field is simply left blank
 ###Building Databases
 
 A series of standard databases can be downloaded and formatted using the
-`build_ref_db` script. Databases will be written to subdirectories within
+`00_build_ref_db` script. Databases will be written to subdirectories within
 /data/florinash/reference_data, to a date-stamped or versioned directory.
 
-`build_ref_db` will download the database using the defiinition from the DATA
+`00_build_ref_db` will download the database using the defiinition from the DATA
 block at the bottom of the script, then will uncompress it, convert to fasta
 format while generating the required taxonomy .dat file, then index for bwa
 alignment. 
 
 e.g. To download and format the 'parasites' database, run the command:
 
-`build_ref_db --db parasites --download`
+`00_build_ref_db --db parasites --download`
 
 ###Database Configurations
 
-`build_ref_db` contains pre-build configurations in YAML format at the bottom
+`00_build_ref_db` contains pre-build configurations in YAML format at the bottom
 of the script. Three different was of defining databases are currently
 available. 
 

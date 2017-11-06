@@ -8,7 +8,7 @@
 
 =head1 SYNOPSIS
 
-    build_ref_db --db [db_name] --out_dir /path/to/output_dir --in_dir /path_to_input_dir --format [embl|genbank]
+    build_ref_db --db [db_name] --out_dir /path/to/output_dir [--in_dir /path_to_input_dir --format [embl|genbank]] [--download]
 
 =head1 DESCRIPTION
 
@@ -52,7 +52,7 @@ use strict;
 use Getopt::Long;
 use Pod::Usage;
 use Carp qw(croak cluck);
-use File::Path qw(rmtree);
+use File::Path qw(make_path rmtree);
 use Bio::SeqIO;
 use Bio::DB::EUtilities;
 use YAML::XS qw(Load);
@@ -84,9 +84,21 @@ use DateTime;
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
     $out_dir = $out_dir . "/$db/$date";
-    $in_dir = $in_dir . $db . "/" . $date . "/raw_data" if ($download);
+    $in_dir = $out_dir . "/raw_data" if ($download);
 
-    mkdir $out_dir or croak "Error creating $out_dir: $!" unless ( -d $out_dir );
+    unless ( -d $out_dir ) {
+    	make_path($out_dir, {error=>\my $err});
+		if (@$err) {
+			for my $diag (@$err) {
+          		my ($file, $message) = %$diag;
+          		if ($file eq '') {
+              		print "general error: $message\n";
+          		} else {
+              		print "problem unlinking $file: $message\n";
+          		}
+      		}
+		}
+	}
     rmtree("$out_dir/split") if ( -d "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
@@ -104,9 +116,9 @@ use DateTime;
         }
     }
 
-    $in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
-    uncompress($in_dir) if ($download);
-    reformat( $db, $format, $in_dir, $out_dir );
+    #$in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
+    #uncompress($in_dir) if ($download);
+    #reformat( $db, $format, $in_dir, $out_dir );
 
     print "\nBuilding BWA index...\n";
     my $cmd = "bwa index $out_dir/$db";
@@ -137,6 +149,19 @@ sub download {
     my $date    = shift;
 
     my $path;
+    unless ( -d $dir ) {
+    	make_path($dir, {error=>\my $err});
+		if (@$err) {
+			for my $diag (@$err) {
+          		my ($file, $message) = %$diag;
+          		if ($file eq '') {
+              		print "general error: $message\n";
+          		} else {
+              		print "problem unlinking $file: $message\n";
+          		}
+      		}
+		}
+	}
 
     foreach my $dat (@$db_data) {
         if ( $dat->{'type'} && $dat->{'type'} eq 'ftp' ) {
@@ -154,10 +179,6 @@ sub download {
         elsif ( $dat->{'type'} && $dat->{'type'} eq 'entrez_assembly' ) {
             print "\nDownloading $db via entrez assemblies...\n";
             $path = entrez_assembly_download( $db, $db_data, $dir );
-        }
-        else {
-            print "Unknown type: " . $dat->{'type'} . "\n";
-            #exit;
         }
     }
     return ($path);
@@ -204,7 +225,7 @@ sub ftp_download {
     rmtree($dir) if ( -d $dir );
     mkdir($dir) or die "Error creating $dir: $!";
 
-    my $ftp = Net::FTP::Recursive->new( $ftp_host, Passive => 1, Debug => 1, Timeout => 480 )
+    my $ftp = Net::FTP::Recursive->new( $ftp_host, Passive => 1, Debug => 0, Timeout => 480 )
       or die "Cannot connect to $ftp_host:$!";
     $ftp->login( "anonymous", 'bsshelp@imperial.ac.uk' ) or die "Cannot login: " . $ftp->message;
     $ftp->binary();
@@ -226,7 +247,7 @@ sub ftp_download {
 
     mkdir("$dir/$release") or croak "Could not mkdir $dir/$release: $!" if ( !-d "$dir/$release" );
     chdir("$dir/$release") or croak "Could not chdir to $dir/$release:$!";
-    $file_pattern =~ s/_release_/$release/;
+    #$file_pattern =~ s/_release_/$release/;
     $ftp->rget( MatchFiles => $file_pattern, FlattenTree => 1 );
 
     return ("$dir/$release");
@@ -614,11 +635,11 @@ sub reformat {
     print "\nMerging tax.dat files...\n";
     open TAX, ">$out_dir/$db.taxid.dat\n";
     foreach my $tax (@tax) {
-        open IN, "$out_dir/split/$tax" or croak "Error opening $out_dir/split/$tax: $!";
-        while (<IN>) {
+        open INTAX, "$out_dir/split/$tax" or croak "Error opening $out_dir/split/$tax: $!";
+        while (<INTAX>) {
             print TAX $_;
         }
-        close IN;
+        close INTAX;
         unlink "$out_dir/split/$tax" or croak "Error removing $out_dir/split/$tax: $!";
     }
     close TAX;
@@ -632,7 +653,7 @@ ensembl_plants:
   - type: ftp
   - ftphost: ftp.ensemblgenomes.org
   - ftpdir: /pub/plants/current/embl
-  - file_pattern: _release_.dat.gz$
+  - file_pattern: .dat.gz$
   - format: embl
 ncbi_viral_genomes:
   - type: entrez
