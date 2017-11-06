@@ -651,13 +651,13 @@ sub reformat {
 }
 
 __DATA__
-ensembl_plants:
+plants:
   - type: ftp
   - ftphost: ftp.ensemblgenomes.org
   - ftpdir: /pub/plants/current/embl
   - file_pattern: .dat.gz$
   - format: embl
-ncbi_viral_genomes:
+viruses:
   - type: entrez
   - format: genbank
   - entrez_query: '"Viruses"[Organism] AND srcdb_refseq[PROP] NOT "cellular organisms"[Organism] NOT AC_000001[PACC] : AC_999999[PACC]'
