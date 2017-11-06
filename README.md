@@ -16,12 +16,15 @@ software:
 1. BioPerl
 2. Bio::DB::EUtilities
 3. DateTime
-4. HTML::Entities
-5. LWP
-6. Net::FTP::Recursive
-7. Parallel::ForkManager
-8. XML::Simple
-9. YAML::XS
+4. File::Copy::Recursive
+5. File::Find::Rule
+6. HTML::Entities
+7. LWP
+8. LWP::Protocol::https
+9. Net::FTP::Recursive
+10. Parallel::ForkManager
+11. XML::Simple
+12. YAML::XS
 
 
 ## Reference Databases

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 
 =pod
 
@@ -116,9 +116,9 @@ use DateTime;
         }
     }
 
-    #$in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
-    #uncompress($in_dir) if ($download);
-    #reformat( $db, $format, $in_dir, $out_dir );
+    $in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
+    uncompress($in_dir) if ($download);
+    reformat( $db, $format, $in_dir, $out_dir );
 
     print "\nBuilding BWA index...\n";
     my $cmd = "bwa index $out_dir/$db";
@@ -284,7 +284,7 @@ sub entrez_download {
         }
     }
 
-    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'`;
+    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'` || 'medbio-help@imperial.ac.uk';
 
     rmtree($dir) if ( -d $dir );
     mkdir($dir) or die "Error creating $dir: $!";
@@ -363,7 +363,7 @@ sub entrez_accession_download {
         }
     }
 
-    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'`;
+    my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'` || 'medbio-help@imperial.ac.uk';
 
     rmtree($dir) if ( -d $dir );
     mkdir($dir) or die "Error creating $dir: $!";
@@ -484,11 +484,13 @@ sub entrez_assembly_download {
 
     my @wgs_accessions;
     my $ua = LWP::UserAgent->new;
+
     foreach my $accession (@$accessions) {
         print "Checking $accession...\n";
-        my $assembly_url = "http://www.ncbi.nlm.nih.gov/assembly/$accession/?report=xml&format=text";
+        my $assembly_url = "https://www.ncbi.nlm.nih.gov/assembly/$accession/?report=xml&format=text";
         my $req          = HTTP::Request->new( GET => $assembly_url );
         my $res          = $ua->request($req);
+
         if ( $res->is_success() ) {
 
             my ( $xml, $xml_ref );
@@ -688,7 +690,7 @@ fungi:
     - GCA_000600275.1
     - GCA_000280675.1
     - GCA_000149445.2 
-    - GCA_000026945.1 
+    - GCF_000026945.1 
     - GCA_000002545.2 
     - GCA_000149425.1 
     - GCA_000747785.1 
