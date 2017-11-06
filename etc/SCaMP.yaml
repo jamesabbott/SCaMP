@@ -1,0 +1,12 @@
+# This file defines the SCaMP configuration. 
+---
+# tmp_dir specifies the location on the machine where working directories will be created
+database_dir: /medbio/Reference_Data/databases/ScaMP
+
+databases:
+  - human
+  - viruses
+  - parasites
+  - fungi
+  - plants
+
