@@ -4,11 +4,11 @@
 
 =head1 NAME
 
-    build_ref_db
+    00_build_ref_db
 
 =head1 SYNOPSIS
 
-    build_ref_db --db [db_name] 
+    00_build_ref_db --db [db_name] 
 
 =head1 DESCRIPTION
 
@@ -56,7 +56,7 @@ use Parallel::ForkManager;
 use DateTime;
 
 use lib "$FindBin::Bin/../lib";
-use SCaMP::Config;
+use SCaMP;
 
 {
 
@@ -73,12 +73,12 @@ use SCaMP::Config;
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db );
 
-    my $config = SCaMP::Config->new();
+    my $scamp = SCaMP->new();
 
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
-    my $out_dir = $config->get_database_dir . "/$db/$date";
-    my $in_dir = $config->get_database_dir() . "/raw_data";
+    my $out_dir = $scamp->get_database_dir . "/$db/$date";
+    my $in_dir = $scamp->get_database_dir() . "/raw_data";
 
     unless ( -d $out_dir ) {
     	make_path($out_dir, {error=>\my $err});
@@ -96,7 +96,7 @@ use SCaMP::Config;
     rmtree("$out_dir/split") if ( -d "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
-    my $dbs = $config->get_databases();
+    my $dbs = $scamp->get_databases();
     foreach my $db_name ( keys %{$dbs} ) {
         $db_data = $dbs->{$db_name} if ( $db_name eq $db );
     }
