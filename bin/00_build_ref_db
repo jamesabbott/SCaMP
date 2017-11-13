@@ -103,7 +103,7 @@ use SCaMP;
     }
 
     unless ( defined($db_data) ) {
-        die "$db database is not defined";
+        croak "$db database is not defined";
     }
 
     if ( !$format ) {
@@ -120,7 +120,7 @@ use SCaMP;
 
     print "\nBuilding BWA index...\n";
     my $cmd = "bwa index $out_dir/$db";
-    system($cmd) == 0 or die "Error executing $cmd:$!";
+    system($cmd) == 0 or croak "Error executing $cmd:$!";
 
 }
 
@@ -222,13 +222,13 @@ sub ftp_download {
     }
 
     rmtree($dir) if ( -d $dir );
-    mkdir($dir) or die "Error creating $dir: $!";
+    mkdir($dir) or croak "Error creating $dir: $!";
 
     my $ftp = Net::FTP::Recursive->new( $ftp_host, Passive => 1, Debug => 0, Timeout => 480 )
-      or die "Cannot connect to $ftp_host:$!";
-    $ftp->login( "anonymous", 'bsshelp@imperial.ac.uk' ) or die "Cannot login: " . $ftp->message;
+      or croak "Cannot connect to $ftp_host:$!";
+    $ftp->login( "anonymous", 'bsshelp@imperial.ac.uk' ) or croak "Cannot login: " . $ftp->message;
     $ftp->binary();
-    $ftp->cwd($ftp_dir) or die "Cannot chdir to ftp_dir: " . $ftp->message;
+    $ftp->cwd($ftp_dir) or croak "Cannot chdir to ftp_dir: " . $ftp->message;
 
     my $rem_dir = $ftp->pwd();
 
@@ -242,12 +242,9 @@ sub ftp_download {
         $release = $date;
     }
 
-    #die "Could not parse release version from $rem_dir" unless ($release);
-
     mkdir("$dir/$release") or croak "Could not mkdir $dir/$release: $!" if ( !-d "$dir/$release" );
     chdir("$dir/$release") or croak "Could not chdir to $dir/$release:$!";
 
-    #$file_pattern =~ s/_release_/$release/;
     $ftp->rget( MatchFiles => $file_pattern, FlattenTree => 1 );
 
     return ("$dir/$release");
@@ -287,7 +284,7 @@ sub entrez_download {
     my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'` || 'medbio-help@imperial.ac.uk';
 
     rmtree($dir) if ( -d $dir );
-    mkdir($dir) or die "Error creating $dir: $!";
+    mkdir($dir) or croak "Error creating $dir: $!";
 
     my $factory = Bio::DB::EUtilities->new(
                                             -eutil      => 'esearch',
@@ -298,7 +295,7 @@ sub entrez_download {
                                           );
 
     my $count = $factory->get_count;
-    my $hist = $factory->next_History || die 'No history data returned';
+    my $hist = $factory->next_History || croak 'No history data returned';
     $factory->set_parameters(
                               -eutil   => 'efetch',
                               -rettype => 'gb',
@@ -308,7 +305,7 @@ sub entrez_download {
     my $retry = 0;
     my ( $retmax, $retstart ) = ( 500, 0 );
 
-    open( my $out, '>', "$dir/$db.gb" ) || die "Can't open file:$!";
+    open( my $out, '>', "$dir/$db.gb" ) || croak "Can't open file:$!";
 
   RETRIEVE_SEQS:
     while ( $retstart < $count ) {
@@ -318,7 +315,7 @@ sub entrez_download {
             $factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
         };
         if ($@) {
-            die "Server error: $@.  Try again later" if $retry == 5;
+            croak "Server error: $@.  Try again later" if $retry == 5;
             print STDERR "Server error, redo #$retry\n";
             $retry++ && redo RETRIEVE_SEQS;
         }
@@ -366,7 +363,7 @@ sub entrez_accession_download {
     my $email = `getent aliases $ENV{'USER'}|awk '{print \$2}'` || 'medbio-help@imperial.ac.uk';
 
     rmtree($dir) if ( -d $dir );
-    mkdir($dir) or die "Error creating $dir: $!";
+    mkdir($dir) or croak "Error creating $dir: $!";
 
     my $factory = Bio::DB::EUtilities->new(
                                             -eutil   => 'efetch',
@@ -418,7 +415,7 @@ sub entrez_accession_download {
         my ( $retmax, $retstart ) = ( 500, 0 );
         my $file = "$dir/$db." . $seq->display_id . ".gb";
 
-        open( my $out, '>', "$file" ) || die "Can't open file:$!";
+        open( my $out, '>', "$file" ) || croak "Can't open file:$!";
 
       RETRIEVE_SEQS:
         while ( $retstart < $#wgs_accessions ) {
@@ -435,7 +432,7 @@ sub entrez_accession_download {
                 $wgs_factory->get_Response( -cb => sub { my ($data) = @_; print $out $data } );
             };
             if ($@) {
-                die "Server error: $@.  Try again later" if $retry == 5;
+                croak "Server error: $@.  Try again later" if $retry == 5;
                 print STDERR "Server error, redo #$retry\n";
                 $retry++ && redo RETRIEVE_SEQS;
             }
@@ -551,8 +548,8 @@ sub uncompress {
 
     print "\nUncompressing...\n";
 
-    chdir $dir or die "Could not chdir to $dir:$!";
-    opendir DIR, $dir or die "Could not open $dir:$!";
+    chdir $dir or croak "Could not chdir to $dir:$!";
+    opendir DIR, $dir or croak "Could not open $dir:$!";
     my @files = grep /gz$/, readdir DIR;
     close DIR;
 
@@ -560,7 +557,7 @@ sub uncompress {
     foreach my $file (@files) {
         $pm->start and next();
         my $cmd = "/usr/bin/gunzip $dir/$file";
-        system($cmd) == 0 or die "Error executing $cmd:$!";
+        system($cmd) == 0 or croak "Error executing $cmd:$!";
         $pm->finish;
     }
     $pm->wait_all_children();
@@ -599,7 +596,7 @@ sub reformat {
 
         my $outIO = Bio::SeqIO->new( -format => 'fasta', -file => ">$out_dir/split/$out_file" );
         my $tax_out = $out_dir . "/split/" . "$db.$in_file.$$.taxid.dat";
-        open TAXOUT, ">$tax_out" or die "Error opening $tax_out: $!";
+        open TAXOUT, ">$tax_out" or croak "Error opening $tax_out: $!";
         print TAXOUT "##Accession\tSpecies\tStrain\tNCBI Tax Id\n";
         while ( my $record = $inIO->next_seq() ) {
             my ( $species, $sub_species, $tax_id );
@@ -620,7 +617,7 @@ sub reformat {
     $pm->wait_all_children();
 
     print "\nMerging fasta files...\n";
-    opendir DIR, "$out_dir/split" or die "Error opening $out_dir: $!";
+    opendir DIR, "$out_dir/split" or croak "Error opening $out_dir: $!";
     my @fastas = grep /fasta$/, readdir DIR;
     rewinddir DIR;
     my @tax = grep /taxid.dat$/, readdir DIR;
