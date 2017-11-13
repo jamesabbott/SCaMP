@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
  
 #$ -pe smp 8
 #$ -l h_rt=00:30:00,h_vmem=2G

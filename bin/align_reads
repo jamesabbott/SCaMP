@@ -1,20 +1,17 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 
-############################################################
-#
-# $HeadURL$
-# $Author$
-# $Revision$
-# $Date$
-#
-############################################################
-
+# Directives for SGE queuing systems
 #$ -j y
 #$ -cwd
 #$ -pe smp 8
 #$ -R y
-#$ -l h_rt=08:00:00,h_vmem=2G
-#$ -t 1-314
+#$ -l h_rt=12:00:00,h_vmem=2G
+
+# Directives for PBS queueing systems
+#PBS -l select=1:ncpus=20:mem=64gb
+#PBS -l walltime=12:00:00
+#PBS -q med-bio
+#PBS -j oe
 
 =pod
 
@@ -80,7 +77,14 @@ my $picard_dir = "/usr/biosoft/cluster/picard/current/";
 {
 
     my $task;
-    ( $ENV{'SGE_TASK_ID'} ) ? ( $task = $ENV{'SGE_TASK_ID'} ) : ( $task = 1 );
+    if ( $ENV{'SGE_TASK_ID'} ) {
+	  $task = $ENV{'SGE_TASK_ID'};
+    elsif ($ENV{'PBS_ARRAY_INDEX'}) {
+	$task = $ENV{'PBS_ARRAY_INDEX}'
+    } else {  
+	$task = 1;
+    }
+
     print "\nTask is $task\n";
     print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
     print "Arguments are @ARGV\n";
