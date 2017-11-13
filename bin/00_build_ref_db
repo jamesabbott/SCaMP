@@ -63,10 +63,10 @@ use SCaMP;
     my ( $format, $db, $help, $man, $db_data );
     my $download = 0;
     GetOptions(
-                'db:s'      => \$db,
-                'format:s'  => \$format,
-                'help'      => \$help,
-                'man'       => \$man,
+                'db:s'     => \$db,
+                'format:s' => \$format,
+                'help'     => \$help,
+                'man'      => \$man,
               );
 
     croak "\nUnknown argument: @ARGV" if "@ARGV";
@@ -78,21 +78,22 @@ use SCaMP;
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
     my $out_dir = $scamp->get_database_dir . "/$db/$date";
-    my $in_dir = $scamp->get_database_dir() . "/raw_data";
+    my $in_dir  = $scamp->get_database_dir() . "/raw_data";
 
     unless ( -d $out_dir ) {
-    	make_path($out_dir, {error=>\my $err});
-		if (@$err) {
-			for my $diag (@$err) {
-          		my ($file, $message) = %$diag;
-          		if ($file eq '') {
-              		print "general error: $message\n";
-          		} else {
-              		print "problem unlinking $file: $message\n";
-          		}
-      		}
-		}
-	}
+        make_path( $out_dir, { error => \my $err } );
+        if (@$err) {
+            for my $diag (@$err) {
+                my ( $file, $message ) = %$diag;
+                if ( $file eq '' ) {
+                    print "general error: $message\n";
+                }
+                else {
+                    print "problem unlinking $file: $message\n";
+                }
+            }
+        }
+    }
     rmtree("$out_dir/split") if ( -d "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
@@ -101,8 +102,8 @@ use SCaMP;
         $db_data = $dbs->{$db_name} if ( $db_name eq $db );
     }
 
-    unless (defined ($db_data)) {
-	die "$db database is not defined";
+    unless ( defined($db_data) ) {
+        die "$db database is not defined";
     }
 
     if ( !$format ) {
@@ -147,18 +148,19 @@ sub download {
 
     my $path;
     unless ( -d $dir ) {
-    	make_path($dir, {error=>\my $err});
-		if (@$err) {
-			for my $diag (@$err) {
-          		my ($file, $message) = %$diag;
-          		if ($file eq '') {
-              		print "general error: $message\n";
-          		} else {
-              		print "problem unlinking $file: $message\n";
-          		}
-      		}
-		}
-	}
+        make_path( $dir, { error => \my $err } );
+        if (@$err) {
+            for my $diag (@$err) {
+                my ( $file, $message ) = %$diag;
+                if ( $file eq '' ) {
+                    print "general error: $message\n";
+                }
+                else {
+                    print "problem unlinking $file: $message\n";
+                }
+            }
+        }
+    }
 
     foreach my $dat (@$db_data) {
         if ( $dat->{'type'} && $dat->{'type'} eq 'ftp' ) {
@@ -244,6 +246,7 @@ sub ftp_download {
 
     mkdir("$dir/$release") or croak "Could not mkdir $dir/$release: $!" if ( !-d "$dir/$release" );
     chdir("$dir/$release") or croak "Could not chdir to $dir/$release:$!";
+
     #$file_pattern =~ s/_release_/$release/;
     $ftp->rget( MatchFiles => $file_pattern, FlattenTree => 1 );
 
@@ -391,9 +394,9 @@ sub entrez_accession_download {
                 my ( $start, $end ) = split( /-/, $wgs->value );
                 my $prefix = $1 if ( $start =~ /^([A-Z]{4})/ );
                 $start =~ s/$prefix//;
-                $end   =~ s/$prefix//;
+                $end =~ s/$prefix//;
                 $start =~ s/^0+//;
-                $end   =~ s/^0+//;
+                $end =~ s/^0+//;
                 for ( my $i = $start ; $i <= $end ; $i++ ) {
                     my ($acc);
                     if ( length($start) == 8 ) {
@@ -509,22 +512,23 @@ sub entrez_assembly_download {
                 my $ver    = sprintf( "%u", $2 );
                 my $acc    = $prefix . '0' x 8 . "." . $ver;
                 push @wgs_accessions, $acc;
-            } else {
-		warn "WGS accession could not be found for assembly $accession";
-		}
+            }
+            else {
+                warn "WGS accession could not be found for assembly $accession";
+            }
         }
         else {
             croak "Could not retrieve $assembly_url: $!";
         }
     }
-	my @new_db_data;
+    my @new_db_data;
     foreach my $val (@$db_data) {
         if ( $val->{'accessions'} ) {
-            $val->{'accessions'} = \@wgs_accessions;;
-        } 
-	push @new_db_data, $val;
-	}
-	print "...done\n\n";
+            $val->{'accessions'} = \@wgs_accessions;
+        }
+        push @new_db_data, $val;
+    }
+    print "...done\n\n";
     $dir = entrez_accession_download( $db, \@new_db_data, $dir );
 
     return ($dir);
