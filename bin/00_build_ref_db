@@ -8,7 +8,7 @@
 
 =head1 SYNOPSIS
 
-    build_ref_db --db [db_name] --out_dir /path/to/output_dir [--in_dir /path_to_input_dir --format [embl|genbank]] [--download]
+    build_ref_db --db [db_name] 
 
 =head1 DESCRIPTION
 
@@ -20,19 +20,11 @@
 
 =item B<db>: name of database to build
 
-=item B<format>: Format of input files - genbank or embl
-
 =back
 
 =head1 OPTIONAL ARGUMENTS
 
 =over
-
-=item B<download>: Download database from defined configuration
-
-=item B<in_dir>: Location of database to reformat - only used if download argument not specified
-
-=item B<out_dir>: Location to output database. Individual databases will be stored within named subdirectories of this directory
 
 =item B<help>: Display help text
 
@@ -49,13 +41,13 @@ Email j.abbott@imperial.ac.uk
 use warnings;
 use strict;
 
+use FindBin;
 use Getopt::Long;
 use Pod::Usage;
 use Carp qw(croak cluck);
 use File::Path qw(make_path rmtree);
 use Bio::SeqIO;
 use Bio::DB::EUtilities;
-use YAML::XS qw(Load);
 use LWP;
 use XML::Simple;
 use HTML::Entities;
@@ -63,16 +55,16 @@ use Net::FTP::Recursive;
 use Parallel::ForkManager;
 use DateTime;
 
+use lib "$FindBin::Bin/../lib";
+use SCaMP::Config;
+
 {
 
-    my ( $format, $db, $in_dir, $out_dir, $help, $man, $db_data );
+    my ( $format, $db, $help, $man, $db_data );
     my $download = 0;
     GetOptions(
                 'db:s'      => \$db,
                 'format:s'  => \$format,
-                'download'  => \$download,
-                'in_dir:s'  => \$in_dir,
-                'out_dir:s' => \$out_dir,
                 'help'      => \$help,
                 'man'       => \$man,
               );
@@ -81,10 +73,12 @@ use DateTime;
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db );
 
+    my $config = SCaMP::Config->new();
+
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
-    $out_dir = $out_dir . "/$db/$date";
-    $in_dir = $out_dir . "/raw_data" if ($download);
+    my $out_dir = $config->get_database_dir . "/$db/$date";
+    my $in_dir = $config->get_database_dir() . "/raw_data";
 
     unless ( -d $out_dir ) {
     	make_path($out_dir, {error=>\my $err});
@@ -102,10 +96,13 @@ use DateTime;
     rmtree("$out_dir/split") if ( -d "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
-    my $yaml = do { local $/; <DATA> };
-    my $yaml_data = Load($yaml);
-    foreach my $db_name ( keys %{$yaml_data} ) {
-        $db_data = $yaml_data->{$db_name} if ( $db_name eq $db );
+    my $dbs = $config->get_databases();
+    foreach my $db_name ( keys %{$dbs} ) {
+        $db_data = $dbs->{$db_name} if ( $db_name eq $db );
+    }
+
+    unless (defined ($db_data)) {
+	die "$db database is not defined";
     }
 
     if ( !$format ) {
@@ -116,7 +113,7 @@ use DateTime;
         }
     }
 
-    $in_dir = download( $db, $db_data, $in_dir, $date ) if ($download);
+    $in_dir = download( $db, $db_data, $in_dir, $date );
     uncompress($in_dir) if ($download);
     reformat( $db, $format, $in_dir, $out_dir );
 
@@ -649,70 +646,4 @@ sub reformat {
     rmdir "$out_dir/split" or croak "Error removing $out_dir/split: $!";
 
 }
-
-__DATA__
-plants:
-  - type: ftp
-  - ftphost: ftp.ensemblgenomes.org
-  - ftpdir: /pub/plants/current/embl
-  - file_pattern: .dat.gz$
-  - format: embl
-viruses:
-  - type: entrez
-  - format: genbank
-  - entrez_query: '"Viruses"[Organism] AND srcdb_refseq[PROP] NOT "cellular organisms"[Organism] NOT AC_000001[PACC] : AC_999999[PACC]'
-parasites:
-  - type: entrez_accessions
-  - format: genbank
-  - accessions:
-    - CABX00000000.1
-    - BX526834.1
-    - AAEE00000000.1
-    - AAEL00000000.2
-    - AAFB00000000.2
-    - ACGJ00000000.1
-    - AACB00000000.2
-    - CBLN000000000.1
-    - CBLO000000000.1
-    - ABIR00000000.2
-    - CBXK000000000.1
-patric:
-  - type: ftp
-  - ftphost: ftp.patricbrc.org
-  - ftpdir: /patric2/genomes
-  - file_pattern: RefSeq.gbf$
-  - format: genbank
-fungi:
-  - type: entrez_assembly
-  - format: genbank
-  - accessions:
-    - GCA_000006275.2
-    - GCA_000600275.1
-    - GCA_000280675.1
-    - GCA_000149445.2 
-    - GCF_000026945.1 
-    - GCA_000002545.2 
-    - GCA_000149425.1 
-    - GCA_000747785.1 
-    - GCA_000764455.1
-    - GCA_000003835.1
-    - GCA_000182765.1
-    - GCA_000006335.2
-    - GCA_000091045.1
-    - GCA_000230625.1
-    - GCA_000149955.1 
-    - GCA_000743665.1
-    - GCA_000149585.1 
-    - GCA_000733625.1
-    - GCA_000181695.1
-    - GCA_000169275.1
-    - GCA_000587855.1 
-    - GCA_000150735.2
-    - GCA_000513335.1
-    - GCA_000222205.1
-    - GCA_000931965.1
-    - GCA_000146045.2
-    - GCA_000299215.2
-    - GCA_000002525.1
-
 
