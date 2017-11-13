@@ -4,9 +4,22 @@ This is a set of scripts for analysis of metagenomic samples.
 
 ## Installation
 
-The software can be installed from git using the command:
+SCaMP requires a number of prerequisite packages to be installed, in addition
+to the SCaMP software itself. The easiest way of carrying this out is through
+the use of [bioconda](bioconda.github.io). You will need to first install both
+git and conda, and setup conda channels as described on the bioconda
+installation page.
 
-git clone https://github.com/jamesabbott/ScaMP.git
+The software can be then installed from git using the command:
+
+git clone https://github.com/jamesabbott/SCaMP.git
+
+Once the repository is cloned, the prerequisite packages can be installed from bioconda/conda:
+
+conda install --file SCaMP/etc/conda_packages.txt
+
+Alternately, the prerequisite packages listed below can be installed manually.
+All installed packages should be available on the default path.
 
 ###Perl Modules
 
@@ -26,7 +39,6 @@ software:
 11. XML::Simple
 12. YAML::XS
 
-
 ## Reference Databases
 
 Each database used by for filtering by these scripts requires the following:
@@ -42,7 +54,7 @@ i.e.
 
 `chr1    Homo sapiens            9606`
 
-This example has no strain defined, so this field is simply left blank
+In this example there is no strain defined, so this field is simply left blank
 
 ###Building Databases
 
