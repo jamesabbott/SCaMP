@@ -107,7 +107,7 @@ sub get_task_id {
         $task = $ENV{'SGE_TASK_ID'};
     }
     elsif ( exists($ENV{'PBS_ARRAY_INDEX'}) ) {
-        $task = $ENV{'PBS_ARRAY_INDEX'}-1;
+        $task = $ENV{'PBS_ARRAY_INDEX'};
     }
     else {
         croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
