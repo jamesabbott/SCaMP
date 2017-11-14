@@ -23,23 +23,25 @@ package SCaMP;
 use Carp qw(croak);
 use YAML::XS qw(LoadFile);
 
-use vars '$AUTOLOAD';                                
+use vars '$AUTOLOAD';
 
-{                                                    
-    my %_attrs = (                                   
-                   _database_dir    => ['read'],     
-                   _databases	    => ['read'],     
-                 );                                  
+{
+    my %_attrs = (
+                   _database_dir => ['read'],
+                   _databases    => ['read'],
+                   _work_dir     => ['read'],
+                   _scratch_dir  => ['read'],
+                 );
 
-    sub _accessible {                                
-        my ( $self, $attr, $mode ) = @_;             
-        return $_attrs{$attr}[0] =~ /$mode/;         
-    }                                                
+    sub _accessible {
+        my ( $self, $attr, $mode ) = @_;
+        return $_attrs{$attr}[0] =~ /$mode/;
+    }
 
-}                                                    
+}
 
-sub DESTROY {                                        
-    my $self = shift;                                
+sub DESTROY {
+    my $self = shift;
     return ();
 }
 
@@ -68,13 +70,18 @@ sub new {
 
 sub _init {
 
-	my $self = shift;
-	my $config = LoadFile("$FindBin::Bin/../etc/SCaMP.yaml");
-	foreach my $key(keys %$config) {
-	    $self->{"_${key}"}=$config->{$key};
-	}
+    my $self   = shift;
+    my $scamp_root = shift;
+    $self->{"_scamp_root"} = $scamp_root;
 
-	return();
+#    my $config = LoadFile("$FindBin::Bin/../etc/SCaMP.yaml");
+    my $config = LoadFile("$scamp_root/etc/SCaMP.yaml");
+
+    foreach my $key ( keys %$config ) {
+        $self->{"_${key}"} = $config->{$key};
+    }
+
+    return ();
 }
 
 =pod
@@ -90,23 +97,22 @@ sub _init {
 =back
  
 =cut
- 
+
 sub get_task_id {
 
     my $self = shift;
     my $task;
 
-    if ( $ENV{'SGE_TASK_ID'} ) {
+    if ( exists($ENV{'SGE_TASK_ID'}) ) {
         $task = $ENV{'SGE_TASK_ID'};
     }
-    elsif ( $ENV{'PBS_ARRAY_INDEX'} ) {
-        $task = $ENV{'PBS_ARRAY_INDEX}'};
+    elsif ( exists($ENV{'PBS_ARRAY_INDEX'}) ) {
+        $task = $ENV{'PBS_ARRAY_INDEX'}-1;
     }
     else {
         croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
     }
     return ($task);
 }
-
 
 1;
