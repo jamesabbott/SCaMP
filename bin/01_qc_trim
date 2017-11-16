@@ -1,114 +1,256 @@
 #!/usr/bin/env perl
 
-######################################################################
-#
-# qc_trim
-#
-# Cluster-based quality trimming of metagenomic reads with trim-galore
-#
-# Expects to find paired demulitplexed reads named .fq.gz or fastq.gz in $orig_dir
-#
-# Reuse with other data will probably require adjustment of regex on
-# line 36 where sampleid_barcode is parsed...
-#
-######################################################################
+# Directives for SGE queuing systems
+#$ -j y
+#$ -cwd
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=04:00:00,h_vmem=2G
+
+# Directives for PBS queueing systems
+#PBS -l select=1:ncpus=2:mem=16gb
+#PBS -l walltime=04:00:00
+#PBS -q med-bio
+#PBS -j oe
+#PBS -V
+
+=pod
+
+=head1 NAME 
+
+01_qc_trim
+
+=head1 SYNOPSIS 
+
+01_qc_trim [--qual 20] [--length 50]
+
+=head1 DESCRIPTION                                         
+
+01_qc_trim carried out initial quality and adapter trimming of sequence reads,
+using trim_galore.
+
+Gzip compressed sequence reads should be placed in a 'reads' subdirectory of
+the work_dir defined in SCaMP.yaml. 
+
+Read files should be named according to the following scheme:
+
+sample_barcode_xxxxx_R1.[fastq|fq].gz
+
+i.e. SP-128_CATGGC_L005_R1.fastq.gz
+
+Characters up to the first '_' will be taken as the sample name. If the reads
+are from a barcoded library and specific adapter sequences are provided
+for each barcode using the '--adapters' argument, then a series of [ACTG]
+characters up to the next '_' will be interpreted as the barcode for the
+sample. The read within each file should be indicated with either the R1 or R2
+tag in the file suffix i.e R1.fastq.gz or R1.fq.gz.
+
+By default, a quality threshold of 20 is used, along with a minimum read length
+to retain of 50 bases. N's at the end of reqds are also removed.
+
+trim_galore will automatically search for Illumina universal and  Nextera
+transposase adapters.
+    
+=head1 OPTIONAL ARGUMENTS                                  
+
+=over                                                      
+
+=item B<qual>: Set quality threshold (default: 20)
+
+Bases with a quality score below this value will be trimmed from the end of
+sequences
+
+=item B<length>: Seq minimum read length (default: 50)
+
+Reads shorter than this value will be discarded following quality and adapter
+trimming
+
+=item B<adapters>: Path to tab-delimited file of bar-coded adapter sequences to
+remove
+
+A tab-delimited file can be specified containing specific adapter sequences for
+individual barcodes. This should be formatted as:
+
+=item B<stage>: Flag to indicate input data should be staged to local storage
+
+barcode	adapter1    adapter2
+
+See documentation for full examples
+
+=item B<help>: Display help text                           
+
+=item B<man>: Display manual page                          
+
+=back                                                      
+
+=head1 AUTHOR - James Abbott                               
+
+Email j.abbott@imperial.ac.uk                              
+
+=cut                                                       
 
 use warnings;
 use strict;
 
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use FindBin;
 use File::Find::Rule;
 use File::Basename;
 use File::Copy qw(copy move);
 use File::Copy::Recursive qw(dirmove);
-use File::Path;
+use File::Path qw(make_path);
+
+# add lib dir to @INC for cmd line use
+# Jobs submitted via SCaMP script should have environment set
+use lib "$FindBin::Bin/../lib";
+use SCaMP;
+
+my $scamp_root;
+if ( $ENV{'SCAMP_ROOT'} ) {
+    $scamp_root = $ENV{'SCAMP_ROOT'};
+}
+else {
+    $scamp_root = "$FindBin::Bin/..";
+}
 
 {
 
-    # thresholds for quality score and min read length...
+    my ( $help, $man, $stage, $adapters );
+
+    # default thresholds for quality score and min read length...
     my $qual   = 20;
     my $length = 50;
-    my $task   = $ENV{'SGE_TASK_ID'} - 1;
-    die "SGE_TASK_ID is not defined" unless defined($task);
 
-    my $trim_galore = "/usr/biosoft/cluster/trim_galore/current/trim_galore";
-    my $orig_dir    = "/data/florinash/original_data/metagenome";
-    my $out_dir     = "/data/florinash/trimmed/";
-    my $scratch_dir = "/local_scratch/florinash/";
-    my %barcodes = (
-                     'ATCACG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGATCTCGTATGCCGTCTTCTGCTTG',
-                     'CGATGT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCGATGTATCTCGTATGCCGTCTTCTGCTTG',
-                     'TTAGGC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTTAGGCATCTCGTATGCCGTCTTCTGCTTG',
-                     'TGACCA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTGACCAATCTCGTATGCCGTCTTCTGCTTG',
-                     'ACAGTG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACAGTGATCTCGTATGCCGTCTTCTGCTTG',
-                     'GCCAAT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGCCAATATCTCGTATGCCGTCTTCTGCTTG',
-                     'CAGATC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCAGATCATCTCGTATGCCGTCTTCTGCTTG',
-                     'ACTTGA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACTTGAATCTCGTATGCCGTCTTCTGCTTG',
-                     'GATCAG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGATCAGATCTCGTATGCCGTCTTCTGCTTG',
-                     'TAGCTT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACTAGCTTATCTCGTATGCCGTCTTCTGCTTG',
-                     'GGCTAC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGGCTACATCTCGTATGCCGTCTTCTGCTTG',
-                     'CTTGTA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCTTGTAATCTCGTATGCCGTCTTCTGCTTG',
-                     'AGTCAA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACAGTCAACAATCTCGTATGCCGTCTTCTGCTTG',
-                     'AGTTCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACAGTTCCGTATCTCGTATGCCGTCTTCTGCTTG',
-                     'ATGTCA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATGTCAGAATCTCGTATGCCGTCTTCTGCTTG',
-                     'CCGTCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCCGTCCCGATCTCGTATGCCGTCTTCTGCTTG',
-                     'GTCCGC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTCCGCACATCTCGTATGCCGTCTTCTGCTTG',
-                     'GTGAAA' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTGAAACGATCTCGTATGCCGTCTTCTGCTTG',
-                     'GTGGCC' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTGGCCTTATCTCGTATGCCGTCTTCTGCTTG',
-                     'GTTTCG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGTTTCGGAATCTCGTATGCCGTCTTCTGCTTG',
-                     'CGTACG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACCGTACGTAATCTCGTATGCCGTCTTCTGCTTG',
-                     'GAGTGG' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACGAGTGGATATCTCGTATGCCGTCTTCTGCTTG',
-                     'ACTGAT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACACTGATATATCTCGTATGCCGTCTTCTGCTTG',
-                     'ATTCCT' => 'GATCGGAAGAGCACACGTCTGAACTCCAGTCACATTCCTTTATCTCGTATGCCGTCTTCTGCTTG',
-                   );
+    GetOptions(
+                'qual:i'     => \$qual,
+                'length:i'   => \$length,
+                'adapters:s' => \$adapters,
+		'stage' => \$stage,
+                'help'       => \$help,
+                'man'        => \$man,
+              );
+
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1 ) if ($help);
+
+    my $SCaMP       = SCaMP->new('scamp_root' => $scamp_root);
+    my $task        = $SCaMP->get_task_id();
+    my $work_dir    = $SCaMP->get_work_dir();
+    my $scratch_dir = $SCaMP->get_scratch_dir;
+
+    my $read_dir = $work_dir . "/reads";
+    my $out_dir  = $work_dir . "/trimmed/";
+
+    my $adapter_seqs = read_adapters($adapters) if ($adapters);
+
+    die "${work_dir}/reads does not exist" unless ( -d "${work_dir}/reads" );
 
     print "Hostname = " . $ENV{'HOSTNAME'} . "\n";
-    mkdir $scratch_dir or die "Error creating $scratch_dir" if ( !-d $scratch_dir );
+    print "Task = $task\n";
 
     my %samples;
-    my @files = File::Find::Rule->file()->name("*.f(ast)?q.gz")->in($orig_dir);
+    my @files = File::Find::Rule->file()->name( "*.fastq.gz", "*.fq.gz" )->in($read_dir);
     foreach my $file (@files) {
-        if ( $file =~ /\/([A-Z0-9\-_]+_[ACTG]{6})_L[0-9]+_R[12].fastq.gz/ ) {
+
+        #filename should be named sample_(optional_barcode)_optionsl_otherstuff_R[12].f(ast)q.gz
+        if ( $file =~ /\/([A-Za-z0-9\-]+)([\w]*?).f(ast)?q.gz$/ ) {
             $samples{$1}++;
         }
         else {
-            warn "Error parsing $file...\n";
+            croak "Error parsing filename: $file...\nPlease check your filenaming meets the required format"
+              unless ($1);
         }
     }
 
     my @samples = sort( keys(%samples) );
-    my $sample  = $samples[$task];
+    my $sample  = $samples[ $task - 1 ];
 
-    # allow for rerunning only incomplete jobs...
+    print "Sample = $sample\n";
+
+    # Allow for rerunning incomplete jobs only by skipping samples whose output directories exist...
+    # Since this only appears with the final dirmove of the script, this should be pretty reliable...
     if ( !-d "$out_dir/$sample" ) {
         my @job_files = grep /$sample/, @files;
 
-        $scratch_dir .= "$sample/";
-        mkdir $scratch_dir or die "Error creating $scratch_dir" if ( !-d $scratch_dir );
-        chdir $scratch_dir or die "Error changing to $scratch_dir: $!";
+        my $read1 = basename( ( grep /R1.f(ast)?q.gz/, @job_files )[0] );
+        my $read2 = basename( ( grep /R2.f(ast)?q.gz/, @job_files )[0] );
 
-        foreach my $file (@job_files) {
-            my $basename = fileparse($file);
-            copy( $file, "$scratch_dir/$basename" ) or die "Error copying $file -> $scratch_dir/$basename:$!";
+        my $barcode = $1 if ( $read1 =~ /${sample}_([ACTG]*)/ );
+
+        print "barcode = $barcode\n" if ($barcode);
+        print "\nread1 = $read1\nread2 = $read2\n";
+
+        my ( $adapter1, $adapter2 );
+        if ($barcode) {
+            $adapter1 = $adapter_seqs->{$barcode}->[0];
+            $adapter2 = $adapter_seqs->{$barcode}->[1];
+            if ($adapter1) {
+                print "adapter1 = $adapter1\nadapter2 = $adapter2\n";
+            }
+            else {
+                print "\nWARNING: Barcode identified in read name but no adapters sequences provided\n";
+            }
         }
 
-        my $read1 = basename( ( grep /R1.fastq.gz/, @job_files )[0] );
-        my $read2 = basename( ( grep /R2.fastq.gz/, @job_files )[0] );
+        my ( $data_dir, $scratch_dir ) =
+          $SCaMP->setup_paths(
+                               'stage'     => $stage,
+                               'sample'    => $sample,
+                               'src_dir'   => $read_dir,
+                               'work_dir'  => $work_dir,
+                               'job_files' => \@job_files
+                             );
+        chdir $scratch_dir or croak "Error changing to $scratch_dir: $!\n";
 
-        my $barcode = $1 if ( $sample =~ /_([ACTG]{6})$/ );
-        die "Error parsing barcode from $sample" unless defined($barcode);
+        #TODO: provide option for passing adapter1 and adapter2 directly
+        #if ( !defined($adapter1) ) {
+        #    $adapter1 = 'GATCGGAAGAGCACACGTCTGAACTCCAGTCAC' . $barcode . 'ATCTCGTATGCCGTCTTCTGCTTG';
+        #}
 
-        my $adapter1 = $barcodes{$barcode};
-        my $adapter2 = 'AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT';
-
-        if ( !defined($adapter1) ) {
-            $adapter1 = 'GATCGGAAGAGCACACGTCTGAACTCCAGTCAC' . $barcode . 'ATCTCGTATGCCGTCTTCTGCTTG';
-        }
-        my $cmd =
-          "$trim_galore --fastqc -q $qual --length $length -a $adapter1 -a2 $adapter2 --gzip --paired $read1 $read2";
+        my $cmd = "trim_galore --fastqc -q $qual --length $length";
+        $cmd .= " -a $adapter1 -a2 $adapter2" if ($adapter1);
+        $cmd .= " --trim-n --gzip --paired $data_dir/$read1 $data_dir/$read2";
         system($cmd) == 0 or die "Error running $cmd:$!";
 
         chdir ".." or die "Error chdiring: $!";
-        dirmove( $sample, "$out_dir/$sample" ) or die "Error moving results: $!";
+        dirmove( $scratch_dir, "$out_dir/$sample" ) or die "Error moving results: $!";
+    } else {
+	print "\nNot running job: output already exists...\n";
     }
 
 }
+
+######################################################################
+#
+# read_adapters
+#
+# Reads barcodes and adapter sequences from specified file
+#
+# Required arguments: $ (path to adapter file)
+#
+# Returns: ($) Hashref to adapters
+#
+######################################################################
+
+sub read_adapters {
+
+    my $adapters = shift;
+
+    my %adapters;
+    open ADAPTERS, $adapters or croak "Could not open $adapters: $!";
+
+    while ( my @fields = split( /\t/, <ADAPTERS> ) ) {
+        next if ( $fields[0] =~ /^#/ );
+        chomp $fields[2];
+        $adapters{ $fields[0] } = [ $fields[1], $fields[2] ];
+    }
+
+    close ADAPTERS;
+
+    return ( \%adapters );
+
+}
+
