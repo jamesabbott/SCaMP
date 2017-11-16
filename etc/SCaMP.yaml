@@ -1,8 +1,12 @@
 # This file defines the SCaMP configuration. 
 ---
-# tmp_dir specifies the location on the machine where working directories will be created
-#database_dir: /medbio/Reference_Data/databases/ScaMP
-database_dir: /home/jamesa/test_db
+# work_dir specifies the location on the machine where working directories will be created
+work_dir: /med-bio/jamesa/SCaMP
+#database_dir is the location where databases are downloaded and stored for analysis
+database_dir: /med-bio/Reference_Data/databases/ScaMP
+scratch_dir: /med-bio/jamesa/scratch
+
+#database configuration used by 00_build_ref_db
 databases:
   plants:
     - type: ftp

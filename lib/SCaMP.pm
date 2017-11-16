@@ -22,8 +22,14 @@ package SCaMP;
 
 use Carp qw(croak);
 use YAML::XS qw(LoadFile);
+use File::Basename;
+use File::Copy qw(copy);
+use File::Path qw(make_path);
 
 use vars '$AUTOLOAD';
+
+use warnings;
+use strict;
 
 {
     my %_attrs = (
@@ -70,11 +76,10 @@ sub new {
 
 sub _init {
 
-    my $self   = shift;
-    my $scamp_root = shift;
+    my ( $self, %args ) = @_;
+    my $scamp_root = $args{'scamp_root'} || croak "scamp_root argument is not prorvided";
     $self->{"_scamp_root"} = $scamp_root;
 
-#    my $config = LoadFile("$FindBin::Bin/../etc/SCaMP.yaml");
     my $config = LoadFile("$scamp_root/etc/SCaMP.yaml");
 
     foreach my $key ( keys %$config ) {
@@ -103,16 +108,84 @@ sub get_task_id {
     my $self = shift;
     my $task;
 
-    if ( exists($ENV{'SGE_TASK_ID'}) ) {
+    if ( exists( $ENV{'SGE_TASK_ID'} ) ) {
         $task = $ENV{'SGE_TASK_ID'};
     }
-    elsif ( exists($ENV{'PBS_ARRAY_INDEX'}) ) {
+    elsif ( exists( $ENV{'PBS_ARRAY_INDEX'} ) ) {
         $task = $ENV{'PBS_ARRAY_INDEX'};
     }
     else {
         croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
     }
     return ($task);
+}
+
+=pod
+
+=over 
+
+=item B<setup_paths>
+
+  Create necessary directories for run, staging data to TMP_DIR if requested. 
+  Required arguments
+    $ ('stage' - boolean: should data be staged to local storage?)
+    $ ('sample' - sample name)
+    $ ('src_dir' - origin dir of data)
+    $ ('work_dir' - location for temp working space)
+    $ ('job_files' - arrayref of filename to stage)
+
+  Returns:
+    $ (in_dir)
+    $ (scratch_dir)
+
+=back
+
+=cut
+
+sub setup_paths {
+
+    my ( $self, %args ) = @_;
+    my $stage     = $args{'stage'};      ## can be passed 0 which fails assignment check  
+    my $sample    = $args{'sample'} || croak "stage argument not provided";
+    my $src_dir   = $args{'src_dir'}   || croak "src_dir argument not provided";
+    my $work_dir  = $args{'work_dir'}  || croak "work_dir argument not provided";
+    my $job_files = $args{'job_files'} || croak "job_filesargument not provided";
+
+    my ( $in_dir, $scratch_dir );
+
+    # for staged data, create local tmp dir in $TMP_DIR, copy input files to $TMP_DIR
+    if ($stage) {
+        $in_dir      = $ENV{'TMPDIR'};
+        $scratch_dir = "$ENV{'TMPDIR'}/work";
+        mkdir "$scratch_dir" or croak "Error creating $scratch_dir: $!";
+
+        print "Staging data...\n";
+        foreach my $file (@$job_files) {
+            my $basename = fileparse($file);
+            print "copy $file ->  $in_dir/$basename\n";
+            copy( $file, "$in_dir/$basename" ) or die "Error copying $file -> $in_dir/$basename:$!";
+        }
+    }
+    else {
+        $in_dir      = $src_dir;
+        $scratch_dir = "$work_dir/tmp/$sample";
+        if ( !-d $scratch_dir ) {
+            make_path( "$scratch_dir", { error => \my $err } );
+            if (@$err) {
+                for my $diag (@$err) {
+                    my ( $file, $message ) = %$diag;
+                    if ( $file eq '' ) {
+                        print "general error: $message\n";
+                    }
+                    else {
+                        print "problem unlinking $file: $message\n";
+                    }
+                }
+            }
+        }
+    }
+    print "in_dir = $in_dir, scratch_dir = $scratch_dir\n";
+    return ( $in_dir, $scratch_dir );
 }
 
 1;
