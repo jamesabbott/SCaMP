@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+module load anaconda2/personal
+
+function usage {
+  echo 
+  echo SCaMP: SCalable Metagenomics Pipeline
+  echo usage: $0 -r run_stage [-s]
+  echo
+  echo Configured stages: ${run_scripts[@]}
+  echo
+  exit 1
+}
+
+# Can't use relative paths to locate components of the system
+# under a batch system since $0 will be a spool directory...
+DIR="$( cd "$( dirname "$0" )" ; pwd  -P)"
+export SCAMP_ROOT="${DIR}/.."
+export PERL5LIB="${DIR}/../lib"
+
+declare -a run_scripts=(01_qc_trim)
+declare -A in_dirs=(["01_qc_trim"]="reads")
+declare -A out_dirs=(["01_qc_trim"]="trimmed")
+
+while getopts "r:s" opt; do
+  case $opt in
+    r)
+      run_stage=${OPTARG}
+      for script in "${run_scripts[@]}"; do
+        if [ ${script} == ${run_stage} ]; then
+          in_dir=${in_dirs[$script]}
+          out_dir=${out_dirs[$script]}
+        fi
+      done 
+      echo
+      echo running ${OPTARG}
+      echo
+      ;;
+    s) 
+      echo "Data will be staged to ${scratch_dir}"
+      stage=1
+      ;;
+    \?) 
+      echo "Invalid option: ${opt}"
+      usage
+      ;;
+    esac
+done
+
+if [ -z "${run_stage}" ]; then
+  usage
+fi
+
+#poor mans YAML parser...
+work_dir=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
+scratch_dir=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
+
+if [ ! -d ${work_dir} ]; then
+  mkdir -p ${work_dir}
+fi
+
+if [ ! -d ${scratch_dir} ]; then
+  mkdir -p ${scratch_dir}
+fi
+
+if [ ! -d ${work_dir}/${out_dir} ]; then
+  mkdir -p ${work_dir}/${out_dir}
+fi
+
+samples=$(($(ls -1 ${work_dir}/reads/*gz|wc -l)/2))
+echo "Found ${samples} samples"
+
+qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
+
