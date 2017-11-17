@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
+## Set up your environment here...this may involve loading
+# an envrionment module, or setting your PATH/PERL5LIB according
+# to where software components are installed
 module load anaconda2/personal
+# export PATH=/path/to/perl:${PATH}
+# export PERL5LIB=/path/to/perllibs:${PERL5LIB}
+
+#### NO CHANGES NECESSARY PAST THIS POINT #####
 
 function usage {
   echo 
@@ -12,15 +19,22 @@ function usage {
   exit 1
 }
 
+# Need to be running bash v4 with support for associative arrays...
+bash_ver=$(echo $BASH_VERSION|awk -F. '{print $1}')
+if [[ ${bash_ver} != '4' ]]; then
+  echo "Bash version >4 required...you have $BASH_VERSION"
+  exit 1
+fi
+
 # Can't use relative paths to locate components of the system
 # under a batch system since $0 will be a spool directory...
 DIR="$( cd "$( dirname "$0" )" ; pwd  -P)"
 export SCAMP_ROOT="${DIR}/.."
 export PERL5LIB="${DIR}/../lib"
 
-declare -a run_scripts=(01_qc_trim)
-declare -A in_dirs=(["01_qc_trim"]="reads")
-declare -A out_dirs=(["01_qc_trim"]="trimmed")
+declare -a run_scripts=(qc_trim)
+declare -A in_dirs=(["qc_trim"]="reads")
+declare -A out_dirs=(["qc_trim"]="trimmed")
 
 while getopts "r:s" opt; do
   case $opt in
@@ -70,5 +84,10 @@ fi
 samples=$(($(ls -1 ${work_dir}/reads/*gz|wc -l)/2))
 echo "Found ${samples} samples"
 
-qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
-
+if [[ ! -z $SGE_ROOT ]]; then
+  qsub -t 1-${samples} -v PERL5LIB ${SCAMP_ROOT}/bin/${run_stage}
+else  
+  have_pbs=$(qsub --version)|grep PBS 
+  echo "have_pbs=${have_pbs}"
+  qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
+fi
