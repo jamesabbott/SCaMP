@@ -1,4 +1,4 @@
-# Florinash Metagenome Pipeline
+# SCaMP SCalable Metagenome Pipeline
 
 This is a set of scripts for analysis of metagenomic samples. 
 
