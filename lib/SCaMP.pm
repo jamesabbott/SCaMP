@@ -159,7 +159,7 @@ sub setup_paths {
         $scratch_dir = "$ENV{'TMPDIR'}/work";
         mkdir "$scratch_dir" or croak "Error creating $scratch_dir: $!";
 
-        print "Staging data...\n";
+        print "Staging data to $in_dir...\n";
         foreach my $file (@$job_files) {
             my $basename = fileparse($file);
             print "copy $file ->  $in_dir/$basename\n";

@@ -51,7 +51,7 @@ while getopts "r:s" opt; do
       echo
       ;;
     s) 
-      echo "Data will be staged to ${scratch_dir}"
+      echo "Data will be staged to local storage"
       stage=1
       ;;
     \?) 
@@ -85,9 +85,16 @@ samples=$(($(ls -1 ${work_dir}/reads/*gz|wc -l)/2))
 echo "Found ${samples} samples"
 
 if [[ ! -z $SGE_ROOT ]]; then
+  echo "SGE queuing system found..."
   qsub -t 1-${samples} -v PERL5LIB ${SCAMP_ROOT}/bin/${run_stage}
 else  
-  have_pbs=$(qsub --version)|grep PBS 
-  echo "have_pbs=${have_pbs}"
-  qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
+  have_pbs=$(qsub --version 2>&1|grep ^pbs_version)
+  if [[ ! -z "${have_pbs}" ]]; then
+    echo "PBS queuing system found..."
+    qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
+  else 
+    echo "No supported queuing system found..."
+    exit 1
+  fi
+  
 fi
