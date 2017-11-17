@@ -12,7 +12,7 @@ module load anaconda2/personal
 function usage {
   echo 
   echo SCaMP: SCalable Metagenomics Pipeline
-  echo usage: $0 -r run_stage [-s]
+  echo usage: $0 -r run_stage [-l]
   echo
   echo Configured stages: ${run_scripts[@]}
   echo
@@ -36,7 +36,9 @@ declare -a run_scripts=(qc_trim)
 declare -A in_dirs=(["qc_trim"]="reads")
 declare -A out_dirs=(["qc_trim"]="trimmed")
 
-while getopts "r:s" opt; do
+stage=1
+
+while getopts "r:l" opt; do
   case $opt in
     r)
       run_stage=${OPTARG}
@@ -50,9 +52,9 @@ while getopts "r:s" opt; do
       echo running ${OPTARG}
       echo
       ;;
-    s) 
-      echo "Data will be staged to local storage"
-      stage=1
+    l) 
+      echo "Data will not be staged to local storage"
+      stage=0
       ;;
     \?) 
       echo "Invalid option: ${opt}"
@@ -64,6 +66,8 @@ done
 if [ -z "${run_stage}" ]; then
   usage
 fi
+
+export SCAMP_DATA_STAGE=${stage}
 
 #poor mans YAML parser...
 work_dir=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
@@ -81,6 +85,10 @@ if [ ! -d ${work_dir}/${out_dir} ]; then
   mkdir -p ${work_dir}/${out_dir}
 fi
 
+if [ ! -d ${work_dir}/logs ]; then
+  mkdir -p ${work_dir}/logs
+fi
+
 samples=$(($(ls -1 ${work_dir}/reads/*gz|wc -l)/2))
 echo "Found ${samples} samples"
 
@@ -91,7 +99,7 @@ else
   have_pbs=$(qsub --version 2>&1|grep ^pbs_version)
   if [[ ! -z "${have_pbs}" ]]; then
     echo "PBS queuing system found..."
-    qsub -J 1-${samples} -N "SCaMP:${run_stage}" ${SCAMP_ROOT}/bin/${run_stage}
+    qsub -J 1-${samples} -N "SCaMP:${run_stage}" -v SCAMP_DATA_STAGE ${SCAMP_ROOT}/bin/${run_stage}
   else 
     echo "No supported queuing system found..."
     exit 1

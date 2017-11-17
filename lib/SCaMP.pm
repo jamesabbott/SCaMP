@@ -93,6 +93,37 @@ sub _init {
  
 =over
  
+=item B<get_job_id>
+ 
+    Returns the id of the task being executed. This is derived from the setting
+    of the PBS_JOBID or JOB_ID  environmental variables which are set
+    during the execution of an array job task. 
+
+=back
+ 
+=cut
+
+sub get_job_id {
+
+    my $self = shift;
+    my $job;
+
+    if ( exists( $ENV{'JOB_ID'} ) ) {
+        $job = $ENV{'JOB_ID'};
+    }
+    elsif ( exists( $ENV{'PBS_JOBID'} ) ) {
+        $job = $ENV{'PBS_JOBID'};
+    }
+    else {
+        croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
+    }
+    return ($job);
+}
+
+=pod
+ 
+=over
+ 
 =item B<get_task_id>
  
     Returns the id of the task being executed. This is derived from the setting
@@ -145,10 +176,10 @@ sub get_task_id {
 sub setup_paths {
 
     my ( $self, %args ) = @_;
-    my $stage     = $args{'stage'};      ## can be passed 0 which fails assignment check  
-    my $sample    = $args{'sample'} || croak "stage argument not provided";
-    my $src_dir   = $args{'src_dir'}   || croak "src_dir argument not provided";
-    my $work_dir  = $args{'work_dir'}  || croak "work_dir argument not provided";
+    my $stage = $args{'stage'};                                          ## can be passed 0 which fails assignment check
+    my $sample = $args{'sample'} || croak "stage argument not provided";
+    my $src_dir   = $args{'src_dir'} || croak "src_dir argument not provided";
+    my $work_dir  = $args{'work_dir'} || croak "work_dir argument not provided";
     my $job_files = $args{'job_files'} || croak "job_filesargument not provided";
 
     my ( $in_dir, $scratch_dir );

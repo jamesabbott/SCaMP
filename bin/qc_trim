@@ -127,7 +127,7 @@ else {
                 'qual:i'     => \$qual,
                 'length:i'   => \$length,
                 'adapters:s' => \$adapters,
-		'stage' => \$stage,
+                'stage'      => \$stage,
                 'help'       => \$help,
                 'man'        => \$man,
               );
@@ -136,13 +136,17 @@ else {
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ($help);
 
-    my $SCaMP       = SCaMP->new('scamp_root' => $scamp_root);
+    $stage=$ENV{'SCAMP_DATA_STAGE'} if (exists ($ENV{'SCAMP_DATA_STAGE'}));
+
+    my $SCaMP       = SCaMP->new( 'scamp_root' => $scamp_root );
+    my $job         = $SCaMP->get_job_id();
     my $task        = $SCaMP->get_task_id();
     my $work_dir    = $SCaMP->get_work_dir();
     my $scratch_dir = $SCaMP->get_scratch_dir;
 
     my $read_dir = $work_dir . "/reads";
     my $out_dir  = $work_dir . "/trimmed/";
+    my $log      = $work_dir . "/logs/qc_trim.${job}.${task}.out";
 
     my $adapter_seqs = read_adapters($adapters) if ($adapters);
 
@@ -213,12 +217,14 @@ else {
         my $cmd = "trim_galore --fastqc -q $qual --length $length";
         $cmd .= " -a $adapter1 -a2 $adapter2" if ($adapter1);
         $cmd .= " --trim-n --gzip --paired $data_dir/$read1 $data_dir/$read2";
+        $cmd .= " > ${log} 2>&1";
         system($cmd) == 0 or die "Error running $cmd:$!";
 
         chdir ".." or die "Error chdiring: $!";
         dirmove( $scratch_dir, "$out_dir/$sample" ) or die "Error moving results: $!";
-    } else {
-	print "\nNot running job: output already exists...\n";
+    }
+    else {
+        print "\nNot running job: output already exists...\n";
     }
 
 }
