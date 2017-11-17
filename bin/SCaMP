@@ -21,7 +21,7 @@ function usage {
 
 # Need to be running bash v4 with support for associative arrays...
 bash_ver=$(echo $BASH_VERSION|awk -F. '{print $1}')
-if [[ ${bash_ver} != '4' ]]; then
+if (( "${bash_ver}" < 4 )); then
   echo "Bash version >4 required...you have $BASH_VERSION"
   exit 1
 fi
