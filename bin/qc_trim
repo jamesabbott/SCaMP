@@ -18,15 +18,15 @@
 
 =head1 NAME 
 
-01_qc_trim
+qc_trim
 
 =head1 SYNOPSIS 
 
-01_qc_trim [--qual 20] [--length 50]
+qc_trim [--qual 20] [--length 50]
 
 =head1 DESCRIPTION                                         
 
-01_qc_trim carried out initial quality and adapter trimming of sequence reads,
+qc_trim carried out initial quality and adapter trimming of sequence reads,
 using trim_galore.
 
 Gzip compressed sequence reads should be placed in a 'reads' subdirectory of
