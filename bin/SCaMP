@@ -91,7 +91,7 @@ else
   have_pbs=$(qsub --version 2>&1|grep ^pbs_version)
   if [[ ! -z "${have_pbs}" ]]; then
     echo "PBS queuing system found..."
-    qsub -J 1-${samples} ${SCAMP_ROOT}/bin/${run_stage}
+    qsub -J 1-${samples} -N "SCaMP:${run_stage}" ${SCAMP_ROOT}/bin/${run_stage}
   else 
     echo "No supported queuing system found..."
     exit 1
