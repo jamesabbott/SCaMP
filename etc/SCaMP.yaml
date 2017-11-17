@@ -1,10 +1,10 @@
 # This file defines the SCaMP configuration. 
 ---
 # work_dir specifies the location on the machine where working directories will be created
-work_dir: /med-bio/jamesa/SCaMP
+work_dir: /groupvol/med-bio/jamesa/SCaMP
 #database_dir is the location where databases are downloaded and stored for analysis
-database_dir: /med-bio/Reference_Data/databases/ScaMP
-scratch_dir: /med-bio/jamesa/scratch
+database_dir: /groupvol/med-bio/Reference_Data/databases/ScaMP
+scratch_dir: /groupvol/med-bio/jamesa/scratch
 
 #database configuration used by 00_build_ref_db
 databases:
