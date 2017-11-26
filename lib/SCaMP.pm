@@ -24,6 +24,7 @@ use Carp qw(croak);
 use YAML::XS qw(LoadFile);
 use File::Basename;
 use File::Copy qw(copy);
+use File::Copy::Recursive qw(dircopy);
 use File::Path qw(make_path);
 
 use vars '$AUTOLOAD';
@@ -180,7 +181,9 @@ sub setup_paths {
     my $sample = $args{'sample'} || croak "stage argument not provided";
     my $src_dir   = $args{'src_dir'} || croak "src_dir argument not provided";
     my $work_dir  = $args{'work_dir'} || croak "work_dir argument not provided";
-    my $job_files = $args{'job_files'} || croak "job_filesargument not provided";
+    my $job_files = $args{'job_files'} || croak "job_files argument not provided";
+    my $db = $args{'db'}; 
+    my $db_dir = $self->get_database_dir();
 
     my ( $in_dir, $scratch_dir );
 
@@ -196,6 +199,12 @@ sub setup_paths {
             print "copy $file ->  $in_dir/$basename\n";
             copy( $file, "$in_dir/$basename" ) or die "Error copying $file -> $in_dir/$basename:$!";
         }
+
+	if ($db) {
+	    print "\nCopying $db -> $in_dir/db\n";
+	    #TODO - dircopy won't work here...needs to be more granular
+	    dircopy("$db_dir/$db", "$in_dir/db") or croak "Error copying $db: $!";
+	}
     }
     else {
         $in_dir      = $src_dir;
