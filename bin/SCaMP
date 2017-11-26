@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 
-## Set up your environment here...this may involve loading
-# an envrionment module, or setting your PATH/PERL5LIB according
+# Set up your environment here...this may involve loading
+# an environment module, or setting your PATH/PERL5LIB according
 # to where software components are installed
+
 module load anaconda2/personal
 # export PATH=/path/to/perl:${PATH}
 # export PERL5LIB=/path/to/perllibs:${PERL5LIB}
 
-#### NO CHANGES NECESSARY PAST THIS POINT #####
+#### NO CHANGES SHOULD BE MADE PAST THIS POINT #####
 
 function usage {
   echo 
   echo SCaMP: SCalable Metagenomics Pipeline
-  echo usage: $0 -r run_stage [-l]
+  echo usage: $0 -r run_stage  [-- script arguments]
   echo
   echo Configured stages: ${run_scripts[@]}
+  echo
+  echo Note that any additional arguments to be passed to a particular stage script
+  echo should be provided at the echo end of the command line preceeded by '--'
   echo
   exit 1
 }
@@ -32,77 +36,115 @@ DIR="$( cd "$( dirname "$0" )" ; pwd  -P)"
 export SCAMP_ROOT="${DIR}/.."
 export PERL5LIB="${DIR}/../lib"
 
-declare -a run_scripts=(qc_trim)
-declare -A in_dirs=(["qc_trim"]="reads")
-declare -A out_dirs=(["qc_trim"]="trimmed")
+if [[ ! -e ${SCAMP_ROOT}/etc/SCaMP.yaml ]]; then
+  echo "SCaMP configuration file ${SCAMP_ROOT}/etc/SCaMP.yaml not found"
+  exit 1
+fi
 
-stage=1
+#poor mans YAML parser...
+WORK_DIR=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
+SCRATCH_DIR=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
 
-while getopts "r:l" opt; do
-  case $opt in
-    r)
-      run_stage=${OPTARG}
-      for script in "${run_scripts[@]}"; do
-        if [ ${script} == ${run_stage} ]; then
-          in_dir=${in_dirs[$script]}
-          out_dir=${out_dirs[$script]}
-        fi
-      done 
-      echo
-      echo running ${OPTARG}
-      echo
-      ;;
-    l) 
-      echo "Data will not be staged to local storage"
-      stage=0
-      ;;
-    \?) 
-      echo "Invalid option: ${opt}"
-      usage
-      ;;
-    esac
+
+declare -a RUN_SCRIPTS=(qc_trim filter_reads)
+declare -A IN_DIRS=(["qc_trim"]="reads",["filter_reads"]=""])
+declare -A OUT_DIRS=(["qc_trim"]="trimmed",["filter_reads"="filtered"])
+
+DATA_STAGE=1
+
+# Since we need to capture additional arguments to pass to the command
+# getopt is a bit awkward
+CMD_ARGS=()
+while [[ $# -gt 0 ]]; do
+  key="$1"
+
+  case $key in
+    -r|--run_stage)
+    RUN_STAGE="$2"
+    for script in "${RUN_SCRIPTS[@]}"; do
+      if [ ${script} == ${RUN_STAGE} ]; then
+        IN_DIR=${IN_DIRS[$script]}
+        OUT_DIR=${OUT_DIRS[$script]}
+      fi
+    done 
+
+    echo
+    echo running ${RUN_STAGE}
+    echo
+
+    shift 
+    shift 
+    ;;
+    -l|--local)
+    DATA_STAGE=0
+    shift 
+    ;;
+    --)
+    CMD_ARGS_SET=YES
+    shift # past argument
+    ;;
+    *) # unknown options should be exported as envvars for the stage script
+
+    # We have a boolean flag if the next arg is defined and begins with a '-'
+    if [[ $2 =~ ^[\-] ]] || [[ -z $2  ]]; then
+      arg=$(echo ${1}|sed 's/^[\-]*//')
+      arg=${arg^^}
+      export "SCAMP_ARG_${arg}"=1
+      shift
+    else 
+    # otherwise we have an argument with a value
+      arg=$(echo ${1}|sed 's/^[\-]*//')
+      arg=${arg^^}
+      export "SCAMP_ARG_${arg}"=$2
+      shift
+      shift
+    fi
+    ;;
+  esac
 done
 
-if [ -z "${run_stage}" ]; then
+if [ -z "${RUN_STAGE}" ]; then
   usage
 fi
 
-export SCAMP_DATA_STAGE=${stage}
+export SCAMP_DATA_STAGE=${DATA_STAGE}
 
-#poor mans YAML parser...
-work_dir=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
-scratch_dir=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
-
-if [ ! -d ${work_dir} ]; then
-  mkdir -p ${work_dir}
+if [ ! -d ${WORK_DIR} ]; then
+  mkdir -vp ${WORK_DIR}
 fi
 
-if [ ! -d ${scratch_dir} ]; then
-  mkdir -p ${scratch_dir}
+if [ ! -d ${SCRATCH_DIR} ]; then
+  mkdir -vp ${SCRATH_DIR}
 fi
 
-if [ ! -d ${work_dir}/${out_dir} ]; then
-  mkdir -p ${work_dir}/${out_dir}
+if [ ! -d ${WORK_DIR}/${OUT_DIR} ]; then
+  mkdir -vp ${WORK_DIR}/${OUT_DIR}
 fi
 
-if [ ! -d ${work_dir}/logs ]; then
-  mkdir -p ${work_dir}/logs
+if [ ! -d ${WORK_DIR}/logs ]; then
+  mkdir -vp ${WORK_DIR}/logs
 fi
 
-samples=$(($(ls -1 ${work_dir}/reads/*gz|wc -l)/2))
-echo "Found ${samples} samples"
+if [ ${RUN_STAGE} == "filter_reads" ] && [ ! -d ${WORK_DIR}/filtered ]; then
+  mkdir -vp ${WORK_DIR}/filtered
+fi
+
+SAMPLES=$(($(ls -1 ${WORK_DIR}/reads/*gz|wc -l)/2))
+echo "Found ${SAMPLES} samples"
 
 if [[ ! -z $SGE_ROOT ]]; then
+  echo
   echo "SGE queuing system found..."
-  qsub -t 1-${samples} -v PERL5LIB ${SCAMP_ROOT}/bin/${run_stage}
+  qsub -t 1-${SAMPLES} -v PERL5LIB ${SCAMP_ROOT}/bin/${RUN_STAGE} 
 else  
-  have_pbs=$(qsub --version 2>&1|grep ^pbs_version)
-  if [[ ! -z "${have_pbs}" ]]; then
-    echo "PBS queuing system found..."
-    qsub -J 1-${samples} -N "SCaMP:${run_stage}" -v SCAMP_DATA_STAGE ${SCAMP_ROOT}/bin/${run_stage}
+  HAVE_PBS=$(qsub --version 2>&1|grep ^pbs_version)
+  if [[ ! -z "${HAVE_PBS}" ]]; then
+    echo
+    echo PBS queuing system found...
+    echo qsub command: qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE}
+    qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE}
   else 
     echo "No supported queuing system found..."
     exit 1
   fi
-  
 fi
