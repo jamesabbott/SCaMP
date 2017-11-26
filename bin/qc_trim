@@ -136,7 +136,11 @@ else {
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ($help);
 
-    $stage=$ENV{'SCAMP_DATA_STAGE'} if (exists ($ENV{'SCAMP_DATA_STAGE'}));
+    # get arguments from env vars if these are defined, overriding command line...
+    $qual     = $ENV{'SCAMP_ARG_QUAL'}     if ( exists( $ENV{'SCAMP_ARG_QUAL'} ) );
+    $length   = $ENV{'SCAMP_ARG_LENGTH'}   if ( exists( $ENV{'SCAMP_ARG_LENGTH'} ) );
+    $adapters = $ENV{'SCAMP_ARG_ADAPTERS'} if ( exists( $ENV{'SCAMP_ARG_ADAPTERS'} ) );
+    $stage    = $ENV{'SCAMP_DATA_STAGE'}   if ( exists( $ENV{'SCAMP_DATA_STAGE'} ) );
 
     my $SCaMP       = SCaMP->new( 'scamp_root' => $scamp_root );
     my $job         = $SCaMP->get_job_id();
@@ -154,6 +158,8 @@ else {
 
     print "Hostname = " . $ENV{'HOSTNAME'} . "\n";
     print "Task = $task\n";
+    print "qual = $qual\n";
+    print "length = $length\n";
 
     my %samples;
     my @files = File::Find::Rule->file()->name( "*.fastq.gz", "*.fq.gz" )->in($read_dir);
@@ -221,6 +227,7 @@ else {
         system($cmd) == 0 or die "Error running $cmd:$!";
 
         chdir ".." or die "Error chdiring: $!";
+        print "Copying $scratch_dir to $out_dir/$sample...\n";
         dirmove( $scratch_dir, "$out_dir/$sample" ) or die "Error moving results: $!";
     }
     else {
