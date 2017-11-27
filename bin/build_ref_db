@@ -135,7 +135,8 @@ else {
     if (-l $latest) {
 		unlink $latest or die "Error removing $latest symlink: $!";
     }
-    symlink ($out_dir, $latest) or die "Error creating $latest symlink: $!";
+	chdir "$out_dir/.." or die "Error chdiring to $out_dir/..:$ !";
+    symlink ($date, $latest) or die "Error creating $latest symlink: $!";
 
 }
 
