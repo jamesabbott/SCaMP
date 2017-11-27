@@ -97,12 +97,13 @@ else {
                     print "general error: $message\n";
                 }
                 else {
-                    print "problem unlinking $file: $message\n";
+                    print "problem creating $file: $message\n";
                 }
             }
         }
     }
-    rmtree("$out_dir/split") if ( -d "$out_dir/split" );
+	print "split=$out_dir/split\n";
+    rmtree("$out_dir/split") if ( -e "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
     my $dbs = $scamp->get_databases();
@@ -132,7 +133,7 @@ else {
 
     my $latest = $scamp->get_database_dir() . "/$db/latest";
     if (-l $latest) {
-	unlink $latest or die "Error removing $latest symlink: $!";
+		unlink $latest or die "Error removing $latest symlink: $!";
     }
     symlink ($out_dir, $latest) or die "Error creating $latest symlink: $!";
 
