@@ -58,6 +58,14 @@ use DateTime;
 use lib "$FindBin::Bin/../lib";
 use SCaMP;
 
+my $scamp_root;
+if ( $ENV{'SCAMP_ROOT'} ) {
+    $scamp_root = $ENV{'SCAMP_ROOT'};
+}
+else {
+    $scamp_root = "$FindBin::Bin/..";
+}
+
 {
 
     my ( $format, $db, $help, $man, $db_data );
@@ -73,7 +81,7 @@ use SCaMP;
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db );
 
-    my $scamp = SCaMP->new();
+    my $scamp = SCaMP->new('scamp_root' => $scamp_root);
 
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
@@ -121,6 +129,12 @@ use SCaMP;
     print "\nBuilding BWA index...\n";
     my $cmd = "bwa index $out_dir/$db";
     system($cmd) == 0 or croak "Error executing $cmd:$!";
+
+    my $latest = $scamp->get_database_dir() . "/$db/latest";
+    if (-l $latest) {
+	unlink $latest or die "Error removing $latest symlink: $!";
+    }
+    symlink ($out_dir, $latest) or die "Error creating $latest symlink: $!";
 
 }
 
