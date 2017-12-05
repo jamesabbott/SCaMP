@@ -15,7 +15,7 @@ function usage {
   echo SCaMP: SCalable Metagenomics Pipeline
   echo usage: $0 -r run_stage  [-- script arguments]
   echo
-  echo Configured stages: ${run_scripts[@]}
+  echo Configured stages: ${RUN_SCRIPTS[@]}
   echo
   echo Note that any additional arguments to be passed to a particular stage script
   echo should be provided at the echo end of the command line preceeded by '--'
@@ -44,7 +44,6 @@ fi
 #poor mans YAML parser...
 WORK_DIR=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
 SCRATCH_DIR=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
-
 
 declare -a RUN_SCRIPTS=(qc_trim filter_reads)
 declare -A IN_DIRS=(["qc_trim"]="reads",["filter_reads"]=""])
@@ -141,8 +140,14 @@ else
   if [[ ! -z "${HAVE_PBS}" ]]; then
     echo
     echo PBS queuing system found...
-    echo qsub command: qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE}
-    qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE}
+
+    RET=$(qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE})
+    if [ ! $? -eq 0 ]; then
+	echo "An error occurred submitting the job: ${RET}"
+    else
+	echo "Job submitted - ${RET}"
+    fi
+    
   else 
     echo "No supported queuing system found..."
     exit 1
