@@ -8,6 +8,12 @@ scratch_dir: /groupvol/med-bio/jamesa/scratch
 
 #database configuration used by build_ref_db
 databases:
+  human:
+    - type: ftp
+    - ftphost: ftp.ensembl.org
+    - ftpdir: ftp://ftp.ensembl.org/pub/current_embl/homo_sapiens/
+    - file_pattern: .dat.gz$
+    - format: embl
   plants:
     - type: ftp
     - ftphost: ftp.ensemblgenomes.org
