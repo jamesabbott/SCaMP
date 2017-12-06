@@ -627,7 +627,6 @@ sub reformat {
               ? ( $ids{ $record->display_id }++ )
               : ( $ids{ $record->display_id } = 1 );
 
-            print "ID: ", $record->display_id(), "\tcount=", $ids{ $record->display_id }, "\n";
             $record->display_id( $record->display_id . "_" . $ids{ $record->display_id } );
 
             #prepend accession with tax_id since ensembl etc. aren't necessarily unique...
