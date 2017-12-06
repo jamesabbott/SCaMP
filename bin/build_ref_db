@@ -80,7 +80,7 @@ else {
     pod2usage( verbose => 2 ) if ($man);
     pod2usage( verbose => 1 ) if ( $help || !$db );
 
-    my $scamp = SCaMP->new('scamp_root' => $scamp_root);
+    my $scamp = SCaMP->new( 'scamp_root' => $scamp_root );
 
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
@@ -131,11 +131,11 @@ else {
     system($cmd) == 0 or croak "Error executing $cmd:$!";
 
     my $latest = $scamp->get_database_dir() . "/$db/latest";
-    if (-l $latest) {
-		unlink $latest or die "Error removing $latest symlink: $!";
+    if ( -l $latest ) {
+        unlink $latest or die "Error removing $latest symlink: $!";
     }
-	chdir "$out_dir/.." or die "Error chdiring to $out_dir/..:$ !";
-    symlink ($date, $latest) or die "Error creating $latest symlink: $!";
+    chdir "$out_dir/.." or die "Error chdiring to $out_dir/..:$ !";
+    symlink( $date, $latest ) or die "Error creating $latest symlink: $!";
 
 }
 
@@ -603,6 +603,7 @@ sub reformat {
 
     print "\nConverting $db to fasta format...\n\n";
     my $pm = new Parallel::ForkManager(8);
+    my %ids;
     foreach my $in_file (@in_files) {
         $pm->start and next();
         my $inIO = Bio::SeqIO->new( -format => $format, -file => "$in_dir/$in_file" );
@@ -619,6 +620,15 @@ sub reformat {
             $species     = $record->species->binomial();
             $sub_species = $record->species->sub_species() if ( $record->species->sub_species() );
             $tax_id      = $record->species->ncbi_taxid();
+
+            # Handle non-unique IDs in databases (yes ensembl, I'm looking at you...) by appending a
+            # count to the end of the ID
+            ( exists $ids{ $record->display_id() } )
+              ? ( $ids{ $record->display_id }++ )
+              : ( $ids{ $record->display_id } = 1 );
+
+            print "ID: ", $record->display_id(), "\tcount=", $ids{ $record->display_id }, "\n";
+            $record->display_id( $record->display_id . "_" . $ids{ $record->display_id } );
 
             #prepend accession with tax_id since ensembl etc. aren't necessarily unique...
             $record->display_id( $tax_id . "_" . $record->display_id );
