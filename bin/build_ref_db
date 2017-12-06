@@ -69,7 +69,6 @@ else {
 {
 
     my ( $format, $db, $help, $man, $db_data );
-    my $download = 0;
     GetOptions(
                 'db:s'     => \$db,
                 'format:s' => \$format,
@@ -102,7 +101,7 @@ else {
             }
         }
     }
-	print "split=$out_dir/split\n";
+
     rmtree("$out_dir/split") if ( -e "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
 
@@ -124,7 +123,7 @@ else {
     }
 
     $in_dir = download( $db, $db_data, $in_dir, $date );
-    uncompress($in_dir) if ($download);
+    uncompress($in_dir);
     reformat( $db, $format, $in_dir, $out_dir );
 
     print "\nBuilding BWA index...\n";
@@ -244,7 +243,7 @@ sub ftp_download {
       or croak "Cannot connect to $ftp_host:$!";
     $ftp->login( "anonymous", 'bsshelp@imperial.ac.uk' ) or croak "Cannot login: " . $ftp->message;
     $ftp->binary();
-    $ftp->cwd($ftp_dir) or croak "Cannot chdir to ftp_dir: " . $ftp->message;
+    $ftp->cwd($ftp_dir) or croak "Cannot chdir to $ftp_dir: " . $ftp->message;
 
     my $rem_dir = $ftp->pwd();
 
