@@ -13,3 +13,4 @@ perl-parallel-forkmanager
 perl-xml-simple
 perl-yaml-libyaml
 trim-galore
+r
