@@ -31,13 +31,13 @@ if [ ${ENV_EXISTS} == 1 ]; then
 	    echo 
 	    echo "Removing SCaMP environment..."
 	    echo
-	    #$(conda remove --name SCaMP --all)
-	    #if [ $? != 0 ]; then
-		#echo
-		#echo "An error occured removing the SCaMP environment..."
-		#echo
-		#exit 1
-	    #fi
+	    $(conda remove --name SCaMP --all)
+	    if [ $? != 0 ]; then
+		echo
+		echo "An error occured removing the SCaMP environment..."
+		echo
+		exit 1
+	    fi
 	    break
 	else
 	    echo
