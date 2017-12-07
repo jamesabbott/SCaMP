@@ -77,6 +77,8 @@ barcode	adapter1    adapter2
 
 See documentation for full examples
 
+=item B<check>: Check for valid command line then exit
+
 =item B<help>: Display help text                           
 
 =item B<man>: Display manual page                          
@@ -102,8 +104,8 @@ use File::Copy qw(copy move);
 use File::Copy::Recursive qw(dirmove);
 use File::Path qw(make_path);
 
-# add lib dir to @INC for cmd line use
-# Jobs submitted via SCaMP script should have environment set
+# add lib dir to @INC for interactive runs
+# Jobs submitted via SCaMP script should already have environment set
 use lib "$FindBin::Bin/../lib";
 use SCaMP;
 
@@ -117,7 +119,7 @@ else {
 
 {
 
-    my ( $help, $man, $stage, $adapters );
+    my ( $help, $man, $stage, $adapters, $check );
 
     # default thresholds for quality score and min read length...
     my $qual   = 20;
@@ -128,6 +130,7 @@ else {
                 'length:i'   => \$length,
                 'adapters:s' => \$adapters,
                 'stage'      => \$stage,
+		'check'      => \$check,
                 'help'       => \$help,
                 'man'        => \$man,
               );
@@ -155,6 +158,9 @@ else {
     my $adapter_seqs = read_adapters($adapters) if ($adapters);
 
     die "${work_dir}/reads does not exist" unless ( -d "${work_dir}/reads" );
+    #
+    # exit after command line args checked if --check specified...
+    exit(0) if ($check);
 
     print "Hostname = " . $ENV{'HOSTNAME'} . "\n";
     print "Task = $task\n";
@@ -177,7 +183,6 @@ else {
 
     my @samples = sort( keys(%samples) );
     my $sample  = $samples[ $task - 1 ];
-
     print "Sample = $sample\n";
 
     # Allow for rerunning incomplete jobs only by skipping samples whose output directories exist...
@@ -231,7 +236,7 @@ else {
         dirmove( $scratch_dir, "$out_dir/$sample" ) or die "Error moving results: $!";
     }
     else {
-        print "\nNot running job: output already exists...\n";
+        print "\nNot running job: output $out_dir/$sample already exists...\n";
     }
 
 }
