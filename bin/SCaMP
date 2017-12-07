@@ -5,6 +5,8 @@
 # to where software components are installed
 
 module load anaconda2/personal
+source activate SCaMP
+
 # export PATH=/path/to/perl:${PATH}
 # export PERL5LIB=/path/to/perllibs:${PERL5LIB}
 
@@ -46,8 +48,8 @@ WORK_DIR=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed
 SCRATCH_DIR=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
 
 declare -a RUN_SCRIPTS=(qc_trim filter_reads)
-declare -A IN_DIRS=(["qc_trim"]="reads",["filter_reads"]=""])
-declare -A OUT_DIRS=(["qc_trim"]="trimmed",["filter_reads"="filtered"])
+declare -A IN_DIRS=([qc_trim]=reads [filter_reads]=""])
+declare -A OUT_DIRS=([qc_trim]=trimmed [filter_reads]=filtered)
 
 DATA_STAGE=1
 
@@ -108,6 +110,12 @@ fi
 
 export SCAMP_DATA_STAGE=${DATA_STAGE}
 
+# check for correct stage script usage before submitting to queue
+${SCAMP_ROOT}/bin/${RUN_STAGE} --check
+if [ $? != 0 ]; then
+    exit 1
+fi
+
 if [ ! -d ${WORK_DIR} ]; then
   mkdir -vp ${WORK_DIR}
 fi
@@ -144,8 +152,10 @@ else
     RET=$(qsub -J 1-${SAMPLES} -N "SCaMP:${RUN_STAGE}" -V ${SCAMP_ROOT}/bin/${RUN_STAGE})
     if [ ! $? -eq 0 ]; then
 	echo "An error occurred submitting the job: ${RET}"
+	echo
     else
-	echo "Job submitted - ${RET}"
+	echo "Job submitted - Job ID ${RET}"
+	echo
     fi
     
   else 
