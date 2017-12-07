@@ -116,7 +116,7 @@ sub get_job_id {
         $job = $ENV{'PBS_JOBID'};
     }
     else {
-        croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
+        $job = 1;
     }
     return ($job);
 }
@@ -147,7 +147,7 @@ sub get_task_id {
         $task = $ENV{'PBS_ARRAY_INDEX'};
     }
     else {
-        croak "This script should be run as an array job using either the SGE or PBSPro batch queueing systems";
+        $task = 1;
     }
     return ($task);
 }
@@ -192,6 +192,7 @@ sub setup_paths {
         $in_dir      = $ENV{'TMPDIR'};
         $scratch_dir = "$ENV{'TMPDIR'}/work";
         mkdir "$scratch_dir" or croak "Error creating $scratch_dir: $!";
+        mkdir "$in_dir/db" or croak "Error creating $in_dir/db: $!";
 
         print "Staging data to $in_dir...\n";
         foreach my $file (@$job_files) {
@@ -201,9 +202,10 @@ sub setup_paths {
         }
 
 	if ($db) {
-	    print "\nCopying $db -> $in_dir/db\n";
-	    #TODO - dircopy won't work here...needs to be more granular
-	    dircopy("$db_dir/$db", "$in_dir/db") or croak "Error copying $db: $!";
+	    print "copying $db database -> $in_dir/db\n";
+	    my $resolved=readlink("$db_dir/$db/latest") or die "Error reading $db_dir/$db/lastest symlink: $!";
+	    dircopy("$db_dir/$db/$resolved", "$in_dir/db") or croak "Error copying $db: $!";
+	    $db_dir = "$in_dir/db";
 	}
     }
     else {
@@ -224,8 +226,9 @@ sub setup_paths {
             }
         }
     }
-    print "in_dir = $in_dir, scratch_dir = $scratch_dir\n";
-    return ( $in_dir, $scratch_dir );
+    print "in_dir = $in_dir, scratch_dir = $scratch_dir, db_dir = $db_dir\n";
+    
+    return ( $in_dir, $scratch_dir, $db_dir );
 }
 
 1;
