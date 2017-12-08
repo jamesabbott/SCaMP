@@ -1,0 +1,404 @@
+#!/usr/bin/env perl
+
+# Directives for SGE queuing systems
+#$ -j y
+#$ -cwd
+#$ -pe smp 8
+#$ -R y
+#$ -l h_rt=12:00:00,h_vmem=2G
+
+# Directives for PBS queueing systems
+#PBS -l select=1:ncpus=20:mem=64gb
+#PBS -l walltime=12:00:00
+#PBS -q med-bio
+#PBS -j oe
+#PBS -V
+
+=pod
+
+=head1 NAME
+
+    filter_reads
+
+=head1 SYNOPSIS
+
+    filter_reads --db [db_name] 
+
+=head1 DESCRIPTION
+
+    Aligns fastq files using BWA's mem algorithm against the specified
+    database.  Reads which fail to align against the database are returned
+    as paired fastq files (hence removing reads which match against the 
+    specified database)
+
+=head1 REQUIRED ARGUMENTS
+
+=over 4
+
+=item B<db>: Database to align reads against
+
+=back
+
+=head1 OPTIONAL ARGUMENTS
+
+=over 4
+
+=item B<stage>: Flag to indicate input data should be staged to local storage
+
+=item B<check>: Check for valid command line then exit
+
+=back
+
+=head1 AUTHOR - James Abbott
+
+Email j.abbott@imperial.ac.uk
+
+=cut
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Pod::Usage;
+use Carp qw(croak);
+use File::Copy;
+use File::Path qw(remove_tree);
+use FindBin;
+use Parallel::ForkManager;
+
+# add lib dir to @INC for cmd line use
+# Jobs submitted via SCaMP script should have environment set
+use lib "$FindBin::Bin/../lib";
+use SCaMP;
+
+my $scamp_root;
+if ( $ENV{'SCAMP_ROOT'} ) {
+    $scamp_root = $ENV{'SCAMP_ROOT'};
+}
+else {
+    $scamp_root = "$FindBin::Bin/..";
+}
+
+{
+    my ( $db_name, $stage, $help, $man, %tax_info, %tax_ids, $in_dir, $out_dir, $scratch_dir,$check );
+    GetOptions(
+                'db=s'  => \$db_name,
+                'stage' => \$stage,
+		'check' => \$check,
+                'help'  => \$help,
+                'man'   => \$man,
+              );
+    croak "\nUnknown argument: @ARGV" if "@ARGV";
+
+    $stage   = $ENV{'SCAMP_DATA_STAGE'} if ( exists( $ENV{'SCAMP_DATA_STAGE'} ) );
+    $db_name = $ENV{'SCAMP_ARG_DB'}     if ( exists( $ENV{'SCAMP_ARG_DB'} ) );
+
+    my $SCaMP    = SCaMP->new( 'scamp_root' => $scamp_root );
+    my $task     = $SCaMP->get_task_id();
+    my $work_dir = $SCaMP->get_work_dir();
+    my $db_dir   = $SCaMP->get_database_dir();
+
+    my $dbs = get_db_list($db_dir);
+    pod2usage( verbose => 2 ) if ($man);
+    pod2usage( verbose => 1, message => \&show_dbs($dbs) )
+      if ( $help || !$db_name );
+
+    croak "$db_name database does not exist" unless grep ( /^$db_name$/, @$dbs );
+
+    # exit after command line args checked if --check specified...
+    exit(0) if ($check);
+
+    my $tax_dat = $db_name . '.taxid.dat';
+
+    print "\nTask is $task\n";
+    print "Exec host is " . $ENV{'HOSTNAME'} . "\n";
+    print "db = $db_name\n";
+
+    $out_dir = $work_dir . "/filtered/";
+
+    # set in_dir according to what filtered outputs exist
+    opendir OUT, $out_dir or croak "Error opening $out_dir: $!";
+    my $out_exists = grep /latest/, readdir OUT;
+    close OUT;
+    $out_dir .= $db_name;
+
+    print "out_dir = $out_dir\n";
+    print "Out_exists=$out_exists\n";
+
+    if ($out_exists) {
+        $in_dir = $work_dir . "/filtered/latest/";
+    }
+    else {
+        $in_dir = $work_dir . "/trimmed/";
+    }
+
+    # Identify sample for this job...
+    opendir IN, $in_dir or croak "Error opening $in_dir: $!";
+    my @samples = sort grep !/\.\.?\z/, readdir IN;
+    close IN;
+    my $sample = $samples[ $task - 1 ];
+
+    print "Sample=$sample\n";
+    print "Sample dir = $in_dir/$sample\n";
+    print "Output dir = $out_dir\n";
+
+    # Identify input files for this job...
+    opendir SAMPLE, "$in_dir/$sample" or croak "Error opening $in_dir/$sample: $!";
+    my @job_files = grep /[12].f(ast)?q.gz$/, readdir SAMPLE;
+    close SAMPLE;
+
+    @job_files = map { $_ = "$in_dir/$sample/$_" } @job_files;
+    print "Job files=@job_files\n";
+
+    #Stage data
+    ( $in_dir, $scratch_dir, $db_dir ) =
+      $SCaMP->setup_paths(
+                           'stage'     => $stage,
+                           'sample'    => $sample,
+                           'src_dir'   => $in_dir,
+                           'work_dir'  => $work_dir,
+                           'job_files' => \@job_files,
+                           'db'        => $db_name
+                         );
+    
+    chdir "$scratch_dir" or die "Error changing to $scratch_dir: $!";
+
+    # Read taxonomic breakdown of references into tax_info
+    open TAX_DAT, "$db_dir/$tax_dat" or die "Error opening $db_dir/tax_dat: $!";
+    while ( my $tax = <TAX_DAT> ) {
+        next if ( $tax =~ /^#/ );
+        my @fields = split( /\t/, $tax );
+        chomp $fields[3];
+        $tax_info{ $fields[0] } = $tax;
+        $tax_ids{ $fields[3] }  = $fields[1];
+    }
+    close TAX_DAT;
+
+    croak "Input directory $in_dir does not exist!" if ( !-d $in_dir );
+
+    print "\nSample $sample will be filtered against $db_name database...\n";
+    print "out_dir = $out_dir\n";
+
+    mkdir "$out_dir" or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
+
+    # get the filenames of the paired fastq files
+    opendir SAMPLE, "$in_dir" or die "Could not open $in_dir: $!";
+    my $pair1 = ( grep /R1(_val_1)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
+    rewinddir SAMPLE;
+    my $pair2 = ( grep /R2(_val_2)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
+    close SAMPLE;
+
+    print "\nread1 = $pair1\n";
+    print "read2 = $pair2\n";
+    
+    my $cmd = "bwa mem -t 8 -M $db_dir/$db_name $in_dir/$pair1 $in_dir/$pair2 |"
+          . " samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
+    print "BWA command: $cmd\n";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # bwa mem seems not to write an eof correctly, so lets fix that...
+    #    $cmd = "/data/florinash/bin/bam_add_eof.py $scratch_dir/$sample.$db_name.bam";
+    #    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    #    if ($filter) {
+    	filter_bam($scratch_dir, $out_dir, $db_name, \%tax_info, \%tax_ids, $sample);
+    #    }
+    #    else {
+            $cmd =
+                "picard -Xmx4G SortSam "
+              . "INPUT=$scratch_dir/$sample.$db_name.bam OUTPUT=$scratch_dir/$sample.$db_name.sorted.bam "
+              . "SORT_ORDER=coordinate CREATE_INDEX=true";
+            system($cmd) == 0 or die "Error executing command: $!";
+            copy( "$scratch_dir/$sample.$db_name.sorted.bam", "$out_dir/$sample/$sample.$db_name.bam" )
+              or die "Error copying $sample.$db_name.sorted.bam:$!";
+            copy( "$scratch_dir/$sample.$db_name.sorted.bai", "$out_dir/$sample/$sample.$db_name.bai" )
+              or die "Error copying $sample.$db_name.sorted.bai:$!";
+            my ( $mapped, $paired );
+            open FLAGSTAT, "samtools flagstat $scratch_dir/$sample.$db_name.bam|"
+              or die "Error opening piped filehandle: $!";
+            while (<FLAGSTAT>) {
+                $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
+                $paired = $1 if (/([0-9]+) \+ [0-9]+ properly paired/);
+            }
+            close FLAGSTAT;
+
+    #        open REPORT, ">$out_dir/$sample/$sample.$db_name.mapping_report.txt"
+    #          or die "Error opening $out_dir/$sample/$sample.$db_name.mapping_report.txt:$!";
+    #        print REPORT "Mapping Report: $sample vs $db_name\n";
+    #        print REPORT "Mapped Reads: $mapped\n";
+    #        print REPORT "Correctly Paired Mappings: $paired\n";
+    #        close REPORT;
+    #
+    #    }
+    my $errors;
+    remove_tree( $scratch_dir, { error => \$errors } );
+    if (@$errors) {
+        print "Errors occurred removing $scratch_dir: \n\n";
+        foreach my $error (@$errors) {
+            print "$error\n";
+        }
+    }
+
+}
+
+######################################################################
+#
+# get_db_list
+#
+# Obtains list of available databases for filtering
+#
+# required params: $ - db_dir
+#
+# returns:  $ - arrayref
+#
+######################################################################
+
+sub get_db_list {
+
+    my $db_dir = shift;
+
+    opendir DBS, $db_dir or croak "Error opening $db_dir: $!";
+    my @dbs = sort grep !/\.\.?\z|raw_data/, readdir DBS;
+    close DBS;
+
+    return ( \@dbs );
+
+}
+
+######################################################################
+#
+# show_dbs
+#
+# Reports on configured databases
+#
+# Required params: $ (db arrayref)
+#
+# Returns:         $ ()
+#
+######################################################################
+
+sub show_dbs {
+
+    my $dbs = shift;
+
+    print "\nAvailable databases:\n\n" . join( "\n", @$dbs ) . "\n\n";
+
+    return ();
+
+}
+
+######################################################################
+#
+# filter_bam
+#
+# filters bam output to extract unaligned reads, while generating
+# summaries of taxonimic distribution of aligned reads, and a list of
+# filtered reads
+#
+# required params:
+#
+# returns:  0 on success
+#
+######################################################################
+
+sub filter_bam {
+
+    my $scratch_dir = shift;
+    my $out_dir     = shift;
+    my $db_name     = shift;
+    my $tax_info    = shift;
+    my $tax_ids     = shift;
+    my $sample      = shift;
+
+    # Build new fastq files of unaligned reads:
+    # SAM flag 0x0004 indicates the read is unmapped, while 0x0008 means the mate is unmapped,
+    # therefore we want those with 0x0012 (12), where both apply...
+    my $cmd = "samtools view -b -f 12 -F 256 $scratch_dir/$sample.$db_name.bam"
+      . " > $scratch_dir/$sample.$db_name.unaligned.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # Extract fastq format unaligned reads from unaligned.bam
+    $cmd =
+        "picard -Xmx4G -XX:MaxPermSize=256m SamToFastq "
+      . "INPUT=$scratch_dir/$sample.$db_name.unaligned.bam FASTQ=$scratch_dir/$sample"
+      . ".$db_name.filtered_1.fq SECOND_END_FASTQ=$scratch_dir/$sample"
+      . ".$db_name.filtered_2.fq";
+    system($cmd) == 0 or die "Error executing command: $!";
+
+    # compress generated fastq files...
+    my $pm = new Parallel::ForkManager(2);
+    foreach my $fastq ( $sample . ".$db_name.filtered_1.fq", $sample . ".$db_name.filtered_2.fq" ) {
+        $pm->start and next();
+        my $cmd = "gzip $scratch_dir/$fastq";
+        system($cmd) == 0 or die "Error executing command: $cmd";
+        copy( "$scratch_dir/$fastq.gz", "$out_dir/$sample/$fastq.gz" )
+          or die "Error copying $fastq.gz: $!";
+        $pm->finish();
+    }
+    $pm->wait_all_children();
+
+    # Extract aligned reads for taxonomic categorisation:
+    $cmd = "samtools view -b -f 2 $scratch_dir/$sample.$db_name.bam" . " > $scratch_dir/$sample.$db_name.aligned.bam";
+    system($cmd) == 0 or die "Error executing bwa: $!";
+
+    # store hit counts vs each reference sequence and tax_id
+    my %ref_counts = ();
+    my %tax_counts = ();
+    open SAMTOOLS, "samtools view $scratch_dir/$sample.$db_name.aligned.bam|"
+      or die "Error opening piped filehandle: $!";
+    while ( my @fields = split( /\t/, <SAMTOOLS> ) ) {
+        $ref_counts{ $fields[2] }++;
+        my $tax_id = ( split( /\t/, $tax_info->{ $fields[2] } ) )[3];
+        chomp($tax_id);
+        $tax_counts{$tax_id}++;
+    }
+    close SAMTOOLS;
+
+    my ( $mapped, $paired );
+    open FLAGSTAT, "samtools flagstat $scratch_dir/$sample.$db_name.aligned.bam|"
+      or die "Error opening piped filehandle: $!";
+    while (<FLAGSTAT>) {
+        $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
+    }
+    close FLAGSTAT;
+
+    open REPORT, ">$scratch_dir/$sample.$db_name.mapping_report.txt"
+      or die "Error opening $scratch_dir/$sample.$db_name.mapping_report.txt: $!";
+    print REPORT "Filtering Report: $sample vs $db_name\n";
+    print REPORT "Filtered Reads: $mapped\n";
+    print REPORT "\n#Taxonomic Summary\n";
+    print REPORT "##Tax ID\tSpecies\tAligned Reads\n";
+    foreach my $tax ( sort { $tax_counts{$b} <=> $tax_counts{$a} } keys(%tax_counts) ) {
+        print REPORT "$tax\t" . $tax_ids->{$tax} . "\t$tax_counts{$tax}\n";
+    }
+    print REPORT "\n##Aligned Reads\tAccession\tSpecies\tSubspecies\tNCBI TaxId\n";
+    foreach my $ref ( sort { $ref_counts{$b} <=> $ref_counts{$a} } keys(%ref_counts) ) {
+        my $tax_data = $tax_info->{$ref};
+        chomp($tax_data);
+        print REPORT "$ref_counts{$ref}\t$tax_data\n";
+    }
+    close REPORT;
+    copy( "$scratch_dir/$sample.$db_name.mapping_report.txt", "$out_dir/$sample/$sample.$db_name.mapping_report.txt" )
+      or die "Error copying $sample.$db_name.mapping_report.txt: $!";
+
+    # create a list of filtered read IDs...
+    open READIDS, ">$scratch_dir/$sample.$db_name.filtered_reads.txt"
+      or die "Error opening $scratch_dir/$sample.$db_name.filtered_reads.txt:$!";
+    open SAMTOOLS, "samtools view $scratch_dir/$sample.$db_name.aligned.bam|"
+      or die "Error opening piped filehandle: $!";
+    while ( my $id = ( split( /\t/, <SAMTOOLS> ) )[0] ) {
+        print READIDS "$id\n";
+    }
+    close SAMTOOLS;
+    close READIDS;
+    copy( "$scratch_dir/$sample.$db_name.filtered_reads.txt", "$out_dir/$sample/$sample.$db_name.filtered_reads.txt" )
+      or die "Error copying $sample.$db_name.mapped_reads.txt: $!";
+
+    unlink "$out_dir/../latest" if (-l "$out_dir/../latest");
+    symlink($out_dir, "$out_dir/../latest") or die "Error creating symlink: $!";
+
+    return (0);
+
+}
+
