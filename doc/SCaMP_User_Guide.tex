@@ -1,0 +1,92 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage{graphicx}
+\usepackage{fullpage}
+\usepackage{fancyhdr}
+\usepackage{fourier}
+\usepackage{framed}
+\usepackage{booktabs}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage[justification=justified,singlelinecheck=false]{caption}
+\usepackage{float}
+\usepackage{todonotes}
+\usepackage{subcaption}
+\usepackage{natbib}
+
+\setlength{\headsep}{20pt}
+\setlength{\headheight}{12pt}
+\pagestyle{fancy}
+\setlength{\parskip}{10pt plus 1pt minus 1pt}
+\sloppy
+
+\begin{document}
+\begin{titlepage}
+\begin{center}
+  \bfseries
+  \huge SCalable Metegenomics Pipeline (SCaMP) User Guide
+  \vskip 0.1in
+  \textsc{\normalsize Version 0.10 }
+  \vskip 0.1in
+  \textsc{\normalsize James Abbott (j.abbott@imperial.ac.uk)}
+\end{center}
+
+\tableofcontents
+\renewcommand{\baselinestretch}{1.0}\normalsize
+\end{titlepage}
+\newpage
+\graphicspath{ {images/} }
+
+\section{Introduction}
+
+The SCalable Metagenomics Pipeline (SCaMP) is a system for high-throughput
+analysis of shotgun metagenome samples. It combines many tools (selected as
+being the most effective in our evaluations) to determine community
+composition, gene representation and abundance through metagenome assembly and
+annotation and pathway representation. 
+
+\section{Installation}
+
+SCaMP requires a number of prerequisite packages to be installed, in addition                            
+to the SCaMP software itself. This can either be achieved by installing all the
+required packages and Perl modules manually, or through the use of conda
+(recommended).
+
+
+\subsection{Quick installation with Conda}
+
+The easiest way of carrying this out is through                            
+the use of [bioconda](bioconda.github.io). You will need to first install both                           
+git and conda, and setup conda channels as described on the bioconda                                     
+installation page.                                  
+
+The software can be then installed from git using the command:                                           
+
+git clone https://github.com/jamesabbott/SCaMP.git  
+
+Once the repository is cloned, the prerequisite packages can be installed from bioconda/conda:           
+
+conda install --file SCaMP/etc/conda_packages.txt   
+
+Alternately, the prerequisite packages listed below can be installed manually.                           
+All installed packages should be available on the default path.                                          
+
+###Perl Modules                                     
+
+A number of non-standard perl modules need to be installed prior to running the                          
+software:                                           
+
+1. BioPerl                                          
+2. Bio::DB::EUtilities                              
+3. DateTime                                         
+4. File::Copy::Recursive                            
+5. File::Find::Rule                                 
+6. HTML::Entities                                   
+7. LWP                                              
+8. LWP::Protocol::https                             
+9. Net::FTP::Recursive                              
+10. Parallel::ForkManager                           
+11. XML::Simple                                     
+12. YAML::XS            
+
+\end{document}
