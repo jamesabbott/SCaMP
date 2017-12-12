@@ -149,7 +149,9 @@ else {
     my $job         = $SCaMP->get_job_id();
     my $task        = $SCaMP->get_task_id();
     my $work_dir    = $SCaMP->get_work_dir();
-    my $scratch_dir = $SCaMP->get_scratch_dir;
+    #my $scratch_dir = $SCaMP->get_scratch_dir;
+    my $scratch_dir;
+
 
     my $read_dir = $work_dir . "/reads";
     my $out_dir  = $work_dir . "/trimmed/";

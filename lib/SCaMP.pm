@@ -37,7 +37,7 @@ use strict;
                    _database_dir => ['read'],
                    _databases    => ['read'],
                    _work_dir     => ['read'],
-                   _scratch_dir  => ['read'],
+#                   _scratch_dir  => ['read'],
                  );
 
     sub _accessible {
@@ -169,6 +169,7 @@ sub get_task_id {
   Returns:
     $ (in_dir)
     $ (scratch_dir)
+    $ (db_dir)
 
 =back
 
