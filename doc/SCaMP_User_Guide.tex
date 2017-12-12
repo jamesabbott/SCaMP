@@ -20,11 +20,24 @@
 \setlength{\parskip}{10pt plus 1pt minus 1pt}
 \sloppy
 
+\newenvironment{tight_enumerate}{
+\begin{enumerate}
+  \setlength{\itemsep}{0pt}
+  \setlength{\parskip}{0pt}
+}{\end{enumerate}}
+
+\newenvironment{tight_itemize}{
+\begin{itemize}
+  \setlength{\itemsep}{0pt}
+  \setlength{\parskip}{0pt}
+}{\end{itemize}}
+
+
 \begin{document}
 \begin{titlepage}
 \begin{center}
   \bfseries
-  \huge SCalable Metegenomics Pipeline (SCaMP) User Guide
+  \huge SCalable Metagenomics Pipeline (SCaMP) User Guide
   \vskip 0.1in
   \textsc{\normalsize Version 0.10 }
   \vskip 0.1in
@@ -49,44 +62,180 @@ annotation and pathway representation.
 
 SCaMP requires a number of prerequisite packages to be installed, in addition                            
 to the SCaMP software itself. This can either be achieved by installing all the
-required packages and Perl modules manually, or through the use of conda
-(recommended).
+required packages and Perl modules manually, or through the use of conda, which
+is the recommended approach since it greatly simplifies installation.  
 
+\subsection{Quick installation with Conda (Recommended)}
 
-\subsection{Quick installation with Conda}
+You will need to first install both git and miniconda, and setup conda channels
+as described on the bioconda installation page: \url{https://bioconda.github.io/#install-conda}.                                  
 
-The easiest way of carrying this out is through                            
-the use of [bioconda](bioconda.github.io). You will need to first install both                           
-git and conda, and setup conda channels as described on the bioconda                                     
-installation page.                                  
+\subsubsection{SCaMP installation}
 
-The software can be then installed from git using the command:                                           
+SCaMP can be then be downloaded from the git repository using the command:                                           
 
-git clone https://github.com/jamesabbott/SCaMP.git  
+{\tt git clone https://github.com/jamesabbott/SCaMP.git}
 
-Once the repository is cloned, the prerequisite packages can be installed from bioconda/conda:           
+Once the repository is cloned, the prerequisite packages can be installed from
+conda using the {\tt setup.sh} script:           
 
-conda install --file SCaMP/etc/conda_packages.txt   
+{\tt SCaMP/bin/setup.sh}
 
-Alternately, the prerequisite packages listed below can be installed manually.                           
-All installed packages should be available on the default path.                                          
+The setup script will create a new conda environment name 'SCaMP' to avoid
+conflicts with any existing conda installations, and use this to install
+the prerequisite packages. Once completed, the script will give the option of
+appending the SCaMP bin directory to your path. This will ensure the SCaMP
+commands are readily available from the command line.
 
-###Perl Modules                                     
+\subsubsection{Customising the SCaMP Environment}
 
-A number of non-standard perl modules need to be installed prior to running the                          
-software:                                           
+If your system requires specific configuration such as manually setting a path,
+or loading an environment module to access conda, then the {\tt bin/SCaMP}
+script can be edited to include any necessary settings. See the comments at the
+top of the script for examples of the kind of configuration which may be
+configured. The {\tt setup.sh} script will have uncommented a line in this
+section to activate the SCaMP conda environment each time the software is run.
 
-1. BioPerl                                          
-2. Bio::DB::EUtilities                              
-3. DateTime                                         
-4. File::Copy::Recursive                            
-5. File::Find::Rule                                 
-6. HTML::Entities                                   
-7. LWP                                              
-8. LWP::Protocol::https                             
-9. Net::FTP::Recursive                              
-10. Parallel::ForkManager                           
-11. XML::Simple                                     
-12. YAML::XS            
+\subsection{Manual Installation (The Slow Way...)}
+
+% comment out conda lines in SCaMP
+\subsubsection{Perl Modules}
+
+A number of non-standard perl modules need to be installed prior to installing SCaMP: 
+
+\begin{tight_enumerate}
+\item BioPerl                                          
+\item Bio::DB::EUtilities                              
+\item DateTime                                         
+\item File::Copy::Recursive                            
+\item File::Find::Rule                                 
+\item HTML::Entities                                   
+\item LWP                                              
+\item LWP::Protocol::https                             
+\item Net::FTP::Recursive                              
+\item Parallel::ForkManager                           
+\item XML::Simple                                     
+\item YAML::XS            
+\end{tight_enumerate}
+
+Most of these will be available through your systems package management system
+(using {\tt yum} or {\tt apt}), however others may require installation from
+CPAN.  
+
+\subsubsection{Prerequisite packages}
+
+A number of software packages also need to installed, and made available on the
+system path prior to running SCaMP. These are listed in table
+\ref{tab:reqpack}, along with tested version numbers.
+
+\begin{table}[htb]
+\begin{tabular}{ll}
+\hline
+\textbf {Package} & \textbf {Tested Version}  \\
+\hline
+trim-galore        & 0.45 \\
+R                  & 3.3.2 \\
+\hline
+\end{tabular}
+\captionof{table}{Required software packages}
+\label{tab:reqpack}
+\end{table}
+
+\subsubsection{SCaMP installation}
+
+SCaMP can be now be downloaded from the git repository using the command:                                           
+
+{\tt git clone https://github.com/jamesabbott/SCaMP.git}
+
+\subsubsection{Customising the SCaMP Environment}
+
+If your system requires specific configuration such as manually setting a path,
+or loading an environment module to access conda, then the {\tt bin/SCaMP}
+script can be edited to include any necessary settings. See the comments at the
+top of the script for examples of the kind of configuration which may be
+configured.
+
+\section{Running SCaMP}
+
+\subsection{Software Layout}
+
+The SCaMP software is layed out across a few directories, the contents of which are hopefully self-explanatory:
+
+{\tt bin} - Executable scripts:
+\begin{tight_itemize}
+\item \textbf{build\_ref\_db}: Downloads and indexes reference databases.
+\item \textbf{filter\_reads}: Filters sequence reads against reference database.
+\item \textbf{qc\_trim}: Runs QC on sequence reads and applies quality and adapter trimming.
+\item \textbf{SCaMP}: Main script for launching analysis runs.
+\item \textbf{setup.sh}: Installs prerequisite packages and configures system.
+\end{tight_itemize}
+
+{\tt doc} - Documentation
+\begin{tight_itemize}
+\item \textbf{SCaMP\_User\_Guide.tex}: LaTeX source for user guide.
+\item \textbf{SCaMP\_User\_Guide.pdf}: PDF format user guide.
+\end{tight_itemize}
+
+{\tt etc} - Configuration data
+\begin{tight_itemize}
+\item \textbf{barcodes.txt}: Example barcode sequences for adapter trimming.
+\item \textbf{conda\_packages.txt}: List of conda packages to be installed by {\tt bin/setup.sh}.
+\item \textbf{SCaMP.yaml}: YAML format configuration file.
+\end{tight_itemize}
+
+{\tt lib} - Common software components used by scripts in {\tt bin}
+\begin{tight_itemize}
+\item \textbf{SCaMP.pm}: Class of common methods used by scripts in {\tt bin}.
+\end{tight_itemize}
+
+\subsection{Preparing to Run SCaMP}
+
+\subsubsection{Configuration File}
+
+The {\tt etc/SCaMP.yaml} defines the SCaMP configuration. In shared
+installations, each user can copy this file to a file named {\tt .SCaMP.yaml}
+in their home directory. If this file is found, then the configuration will be
+read from this file in preference to the {\tt etc/SCaMP.yaml} file.
+
+The configuration file should be edited to define the following attributes:
+
+\begin{tight_itemize}
+\item \textbf{work\_dir}: Path to directory where SCaMP analysis will be carried out
+\item \textbf{database\_dir}: Path to directory for storing reference databases
+\end{tight_itemize}
+
+A series of directories will be created in {\tt work\_dir} as the analysis
+proceeds, storing various intermediate files and analysis results. 
+
+In a shared software installation, a single set of reference databases can be
+downloaded and stored in a centralised {\tt database\_dir} to reduce disk space
+usage. 
+
+\subsubsection{Sequence Reads}
+
+A directory should be created in {\tt work\_dir} named {\tt reads}, and fastq
+files (prefereably compressed using gzip) for the project should be copied into
+this directory.
+
+SCaMP is designed to be run using paired reads from an Illumina sequencer,
+typically a MiSeq or HiSeq. In order for the reads to be identified correctly
+they should be named in accordance with one of the following convention:
+
+\textit{samplename(\_barcode)?(\_xxxxx)?\_R[12].f(ast)?q.gz}
+
+The filename should start with the name of the sample, followed by an optional
+barcode (typically six or eight bases). Additional details may optionally be
+included in the next section of the filename, following which the filename must
+include R1 or R2 (indicating read 1 or read 2 of the paired reads). The
+filename should be suffixed with either .fastq.gz or fq.gz.
+
+Examples of valid filenames include:
+\begin{tight_itemize}
+\item \textit{Sample-001\_R1.fastq.gz}
+\item \textit{Sample-002\_R2.fq.gz}
+\item \textit{Sample-003\_TAATCG\_L005.R1.fastq.gz}
+\end{tight_itemize}
+
+\subsubsection{Reference Databases}
 
 \end{document}
