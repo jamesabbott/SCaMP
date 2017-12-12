@@ -82,6 +82,9 @@ if [ -z "${KEEPENV}" ]; then
 	fi
 fi
 
+#uncomment line in SCaMP activating conda environment
+sed -i 's/^#source activate SCaMP/source activate SCaMP/' ${DIR}/SCaMP
+
 PATHSET=$(which SCaMP 2>/dev/null|grep -c SCaMP)
 if [ "${PATHSET} eq 0" ]; then
 	echo

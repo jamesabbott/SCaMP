@@ -4,8 +4,8 @@
 # an environment module, or setting your PATH/PERL5LIB according
 # to where software components are installed
 
-module load anaconda2/personal
-source activate SCaMP
+#module load anaconda2/personal
+#source activate SCaMP
 
 # export PATH=/path/to/perl:${PATH}
 # export PERL5LIB=/path/to/perllibs:${PERL5LIB}
