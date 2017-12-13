@@ -192,8 +192,8 @@ else {
     if ( !-d "$out_dir/$sample" ) {
         my @job_files = grep /$sample/, @files;
 
-        my $read1 = basename( ( grep /R1.f(ast)?q.gz/, @job_files )[0] );
-        my $read2 = basename( ( grep /R2.f(ast)?q.gz/, @job_files )[0] );
+        my $read1 = basename( ( grep /(R)?1.f(ast)?q.gz/, @job_files )[0] );
+        my $read2 = basename( ( grep /(R)?2.f(ast)?q.gz/, @job_files )[0] );
 
         my $barcode = $1 if ( $read1 =~ /${sample}_([ACTG]*)/ );
 
