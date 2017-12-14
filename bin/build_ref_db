@@ -4,11 +4,11 @@
 
 =head1 NAME
 
-    00_build_ref_db
+    build_ref_db
 
 =head1 SYNOPSIS
 
-    00_build_ref_db --db [db_name] 
+    build_ref_db --db [db_name] [--avail]
 
 =head1 DESCRIPTION
 
@@ -25,6 +25,8 @@
 =head1 OPTIONAL ARGUMENTS
 
 =over
+
+=item B<avail>: List configured databases
 
 =item B<help>: Display help text
 
@@ -68,9 +70,10 @@ else {
 
 {
 
-    my ( $format, $db, $help, $man, $db_data );
+    my ( $format, $db, $avail, $help, $man, $db_data );
     GetOptions(
                 'db:s'     => \$db,
+				'avail'    => \$avail,
                 'format:s' => \$format,
                 'help'     => \$help,
                 'man'      => \$man,
@@ -78,12 +81,38 @@ else {
 
     croak "\nUnknown argument: @ARGV" if "@ARGV";
     pod2usage( verbose => 2 ) if ($man);
-    pod2usage( verbose => 1 ) if ( $help || !$db );
+    pod2usage( verbose => 1 ) if ( $help || (!$db && !$avail) );
 
     my $scamp = SCaMP->new( 'scamp_root' => $scamp_root );
 
     my $dt      = DateTime->now();
     my $date    = $dt->ymd();
+
+    my $dbs = $scamp->get_databases();
+
+	if ( $avail) {
+		print "\nAvailable databases:\n";
+		print join("\n",sort keys (%$dbs));
+		print "\n\n";
+		exit(1);
+	}
+
+    foreach my $db_name ( keys %{$dbs} ) {
+        $db_data = $dbs->{$db_name} if ( $db_name eq $db );
+    }
+
+    unless ( defined($db_data) ) {
+        croak "$db database is not defined";
+    }
+
+    if ( !$format ) {
+        foreach my $val (@$db_data) {
+            if ( $val->{'format'} ) {
+                $format = $val->{'format'};
+            }
+        }
+    }
+
     my $out_dir = $scamp->get_database_dir . "/$db/$date";
     my $in_dir  = $scamp->get_database_dir() . "/raw_data";
 
@@ -104,23 +133,6 @@ else {
 
     rmtree("$out_dir/split") if ( -e "$out_dir/split" );
     mkdir "$out_dir/split" or croak "Error creating $out_dir/split: $!";
-
-    my $dbs = $scamp->get_databases();
-    foreach my $db_name ( keys %{$dbs} ) {
-        $db_data = $dbs->{$db_name} if ( $db_name eq $db );
-    }
-
-    unless ( defined($db_data) ) {
-        croak "$db database is not defined";
-    }
-
-    if ( !$format ) {
-        foreach my $val (@$db_data) {
-            if ( $val->{'format'} ) {
-                $format = $val->{'format'};
-            }
-        }
-    }
 
     $in_dir = download( $db, $db_data, $in_dir, $date );
     uncompress($in_dir);
