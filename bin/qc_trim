@@ -34,23 +34,42 @@ the work_dir defined in SCaMP.yaml.
 
 Read files should be named according to the following scheme:
 
-sample_barcode_xxxxx_R1.[fastq|fq].gz
+sample_(barcode)?(_xxxxx)?_(R)?[12].[fastq|fq].gz
 
 i.e. SP-128_CATGGC_L005_R1.fastq.gz
 
-Characters up to the first '_' will be taken as the sample name. If the reads
-are from a barcoded library and specific adapter sequences are provided
-for each barcode using the '--adapters' argument, then a series of [ACTG]
-characters up to the next '_' will be interpreted as the barcode for the
-sample. The read within each file should be indicated with either the R1 or R2
-tag in the file suffix i.e R1.fastq.gz or R1.fq.gz.
+See the ScaMP User Guide for further examples of valid filenames.
 
 By default, a quality threshold of 20 is used, along with a minimum read length
 to retain of 50 bases. N's at the end of reqds are also removed.
 
 trim_galore will automatically search for Illumina universal and  Nextera
-transposase adapters.
+transposase adapters. Should other primer sequences need to be trimmed, these
+can be provided in a tab-delimited file using the B<adapters> argument. An
+example file is included in the etc directory, named B<barcodes.txt>.
+
+=head1 OUTPUT FILES
+
+Following trimming, the outputs will be written to a 'trimmed' subdirectory in
+work_dir. A separate subdirectory will be created for each sample, containing
+the following files:
     
+=over
+
+=item I<sample_[12].fastq.gz.trimming_report.txt>
+
+TrimGalore report on trimmed bases
+
+=item I<sample_[12]_val_[12]_fastqc.html>
+
+HTML FastQC results
+
+=item I<sample_[12]_val_[12].fq.gz>
+
+Trimmed sequence reads, in gzipped fastq format
+
+=back
+
 =head1 OPTIONAL ARGUMENTS                                  
 
 =over                                                      
@@ -69,25 +88,50 @@ trimming
 remove
 
 A tab-delimited file can be specified containing specific adapter sequences for
-individual barcodes. This should be formatted as:
+individual barcodes. This should contain 3 columns:
 
-=item B<stage>: Flag to indicate input data should be staged to local storage
+=over
 
-barcode	adapter1    adapter2
+=item Barcode
 
-See documentation for full examples
+The distinct barcode for this sample, which  must be included in the fastq file names.
 
-=item B<check>: Check for valid command line then exit
+=item Adapter1
+
+The first (5') adapter sequence
+
+=item Adapter2
+
+The second (3') adapter sequence
+
+=back
+
+=back
+
+=head1 SCAMP ARGUMENTS
+
+The following arguments should only be provided if running the command directly
+for a command line, and I<not> when submitting jobs through the SCaMP script,
+which will take care of setting these appropriately.
+
+=over
+
+=item B<stage>: Stage data to local storage
+
+If this argument is provided, sample data will be copied to a local temporary
+directory on the compute node running the job, otherwise the data will be
+processed I<in-situ>
+
+=item B<check>: Check command syntax
+
+Provides a check that the provided syntax/file-naming is correct to ensure jobs
+submitted to the batch system are valid.
 
 =item B<help>: Display help text                           
 
 =item B<man>: Display manual page                          
 
 =back                                                      
-
-=head1 AUTHOR - James Abbott                               
-
-Email j.abbott@imperial.ac.uk                              
 
 =cut                                                       
 

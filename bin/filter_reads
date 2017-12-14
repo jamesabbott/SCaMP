@@ -18,18 +18,34 @@
 
 =head1 NAME
 
-    filter_reads
+filter_reads
 
 =head1 SYNOPSIS
 
-    filter_reads --db [db_name] 
+filter_reads --db [db_name] 
 
 =head1 DESCRIPTION
 
-    Aligns fastq files using BWA's mem algorithm against the specified
-    database.  Reads which fail to align against the database are returned
-    as paired fastq files (hence removing reads which match against the 
-    specified database)
+Filters sequence reads against a database and removes any aligned reads from
+the fastq files. Alignments are carried out using the BWA mem algorithm, and
+the resulting alignments split into separate bam files for aligned and
+unaligned reads. Reads which are successfully aligned are taxonomically
+classified based on the hits, while new fastq files consisting of reads which
+do not align against the database are produced.
+
+=head1 INPUT AND OUTPUT FILES
+
+The outputs from the filtering will be written to a I<filtered/databasename>
+directory within work_dir. A symbolic link (I<latest>) will indicate the
+outputs of the most recent filtering operation, since multiple databases
+filtering outputs may be present in this directory. The fastq files in the
+I<latest> linked directory will be used as input for the next filter\_reads
+run, such that filtering operations are carried out successively. If no
+I<latest> linked directory exists then fastq files in the I<trimmed> directory
+will be used for filtering instead. The following output files are generated
+for each run of filter\_reads:
+
+%TODO: Complete this section
 
 =head1 REQUIRED ARGUMENTS
 
@@ -39,19 +55,26 @@
 
 =back
 
-=head1 OPTIONAL ARGUMENTS
+=head1 SCAMP ARGUMENTS
 
-=over 4
+The following arguments should only be provided if running the command directly
+for a command line, and I<not> when submitting jobs through the SCaMP script,
+which will take care of setting these appropriately.
 
-=item B<stage>: Flag to indicate input data should be staged to local storage
+=over
 
-=item B<check>: Check for valid command line then exit
+=item B<stage>: Stage data to local storage
+
+If this argument is provided, sample data will be copied to a local temporary
+directory on the compute node running the job, otherwise the data will be
+processed I<in-situ>
+
+=item B<check>: Check command syntax
+
+Provides a check that the provided syntax/file-naming is correct to ensure jobs
+submitted to the batch system are valid.
 
 =back
-
-=head1 AUTHOR - James Abbott
-
-Email j.abbott@imperial.ac.uk
 
 =cut
 

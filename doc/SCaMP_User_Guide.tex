@@ -14,6 +14,7 @@
 \usepackage{subcaption}
 \usepackage{natbib}
 \usepackage{tocloft}
+\usepackage{todonotes}
 
 \setlength{\cftbeforesecskip}{6pt}
 \setlength{\headsep}{20pt}
@@ -132,12 +133,17 @@ system path prior to running SCaMP. These are listed in table
 \ref{tab:reqpack}, along with tested version numbers.
 
 \begin{table}[htb]
-\begin{tabular}{ll}
+\begin{tabular}{lll}
 \hline
-\textbf {Package} & \textbf {Tested Version}  \\
+\textbf {Package} & \textbf {Tested Version}  & \textbf{Download Site} \\
 \hline
-trim-galore        & 0.45 \\
-R                  & 3.3.2 \\
+bwa		& 	0.7.15 	&	http://bio-bwa.sourceforge.net	\\               
+cutadapt	&	1.15	&	https://github.com/marcelm/cutadapt \\	
+FastQC		& 	0.11.5 	&	https://www.bioinformatics.babraham.ac.uk/projects/fastqc	\\
+picard		& 	2.15.0 	&	http://broadinstitute.github.io/picard	\\
+R		& 	3.3.2 	&	http://r-project.org	\\	
+samtools	& 	1.3.1 	&	http://www.htslib.org	\\
+trim-galore	& 	0.45	& 	https://www.bioinformatics.babraham.ac.uk/projects/trim\_galore	\\
 \hline
 \end{tabular}
 \captionof{table}{Required software packages}
@@ -158,7 +164,12 @@ script can be edited to include any necessary settings. See the comments at the
 top of the script for examples of the kind of configuration which may be
 configured.
 
-\section{Running SCaMP}
+\section{About SCaMP}
+
+\subsection{The Pipeline} \label{pipeline}
+
+\todo{Write description of pipeline\ldots}
+\missingfigure{Need current pipeline figure}
 
 \subsection{Software Layout}
 
@@ -331,7 +342,7 @@ Running {\tt SCaMP} without any arguments provides usage information, along
 with a list of the available stages which can be run. \textbf{N.B. stages must
 be executed in the correct order, as described below.}
 
-%TODO: Update output...
+\todo{Update output\ldots}
 \begin{verbatim}
 [jamesa@wssb-james ]$ SCaMP 
 
@@ -366,5 +377,16 @@ SCaMP -r qc_trim --local
 will execute the 'qc\_trim' stage using local storage. Consult your local
 system maintainers if you are unsure of wheter local storage or temporary
 storage on the compute nodes should be used in your environment. 
+q
+\subsection{SCaMP Stages}
+
+The following section descriptions obtained from the embedded help
+documentation within each script. Please refer to \ref{pipeline} for the
+correct ording in which the stages should be run.
+
+\include{stages/qc_trim}
+\include{stages/filter_reads}
+
+
 
 \end{document}
