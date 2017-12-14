@@ -4,3 +4,4 @@ doc/*.aux
 doc/*.toc
 doc/*.log
 doc/*.out
+doc/stages/*
