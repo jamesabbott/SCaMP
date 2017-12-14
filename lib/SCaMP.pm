@@ -37,7 +37,6 @@ use strict;
                    _database_dir => ['read'],
                    _databases    => ['read'],
                    _work_dir     => ['read'],
-#                   _scratch_dir  => ['read'],
                  );
 
     sub _accessible {
@@ -78,10 +77,17 @@ sub new {
 sub _init {
 
     my ( $self, %args ) = @_;
-    my $scamp_root = $args{'scamp_root'} || croak "scamp_root argument is not prorvided";
+    my $scamp_root = $args{'scamp_root'} || croak "scamp_root argument is not provided";
     $self->{"_scamp_root"} = $scamp_root;
-
-    my $config = LoadFile("$scamp_root/etc/SCaMP.yaml");
+	
+	# Config data will be read from ~/.SCaMP.yaml if it exists, otherwise use
+	# default file in etc/SCaMP.yaml
+	my $config;	
+	if (-e "$ENV{'HOME'}/.SCaMP.yaml") { 
+		$config = LoadFile("$ENV{'HOME'}/.SCaMP.yaml"); 
+	} else { 
+		$config = LoadFile("$scamp_root/etc/SCaMP.yaml"); 
+	}
 
     foreach my $key ( keys %$config ) {
         $self->{"_${key}"} = $config->{$key};

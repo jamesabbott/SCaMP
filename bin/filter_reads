@@ -80,11 +80,11 @@ else {
 }
 
 {
-    my ( $db_name, $stage, $help, $man, %tax_info, %tax_ids, $in_dir, $out_dir, $scratch_dir,$check );
+    my ( $db_name, $stage, $help, $man, %tax_info, %tax_ids, $in_dir, $out_dir, $scratch_dir, $check );
     GetOptions(
                 'db=s'  => \$db_name,
                 'stage' => \$stage,
-		'check' => \$check,
+                'check' => \$check,
                 'help'  => \$help,
                 'man'   => \$man,
               );
@@ -160,7 +160,7 @@ else {
                            'job_files' => \@job_files,
                            'db'        => $db_name
                          );
-    
+
     chdir "$scratch_dir" or die "Error changing to $scratch_dir: $!";
 
     # Read taxonomic breakdown of references into tax_info
@@ -179,21 +179,21 @@ else {
     print "\nSample $sample will be filtered against $db_name database...\n";
     print "out_dir = $out_dir\n";
 
-    mkdir "$out_dir" or die $! if ( !-d "$out_dir" );
+    mkdir "$out_dir"         or die $! if ( !-d "$out_dir" );
     mkdir "$out_dir/$sample" or die $! if ( !-d "$out_dir/$sample" );
 
     # get the filenames of the paired fastq files
     opendir SAMPLE, "$in_dir" or die "Could not open $in_dir: $!";
-    my $pair1 = ( grep /R1(_val_1)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
+    my $pair1 = ( grep /(R)?1(_val_1)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
     rewinddir SAMPLE;
-    my $pair2 = ( grep /R2(_val_2)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
+    my $pair2 = ( grep /(R)?2(_val_2)?.f(ast)?q.gz$|filtered_2.fq.gz$/, readdir SAMPLE )[0];
     close SAMPLE;
 
     print "\nread1 = $pair1\n";
     print "read2 = $pair2\n";
-    
+
     my $cmd = "bwa mem -t 8 -M $db_dir/$db_name $in_dir/$pair1 $in_dir/$pair2 |"
-          . " samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
+      . " samtools view -Su - > $scratch_dir/$sample.$db_name.bam";
     print "BWA command: $cmd\n";
     system($cmd) == 0 or die "Error executing bwa: $!";
 
@@ -202,26 +202,27 @@ else {
     #    system($cmd) == 0 or die "Error executing bwa: $!";
 
     #    if ($filter) {
-    	filter_bam($scratch_dir, $out_dir, $db_name, \%tax_info, \%tax_ids, $sample);
+    filter_bam( $scratch_dir, $out_dir, $db_name, \%tax_info, \%tax_ids, $sample );
+
     #    }
     #    else {
-            $cmd =
-                "picard -Xmx4G SortSam "
-              . "INPUT=$scratch_dir/$sample.$db_name.bam OUTPUT=$scratch_dir/$sample.$db_name.sorted.bam "
-              . "SORT_ORDER=coordinate CREATE_INDEX=true";
-            system($cmd) == 0 or die "Error executing command: $!";
-            copy( "$scratch_dir/$sample.$db_name.sorted.bam", "$out_dir/$sample/$sample.$db_name.bam" )
-              or die "Error copying $sample.$db_name.sorted.bam:$!";
-            copy( "$scratch_dir/$sample.$db_name.sorted.bai", "$out_dir/$sample/$sample.$db_name.bai" )
-              or die "Error copying $sample.$db_name.sorted.bai:$!";
-            my ( $mapped, $paired );
-            open FLAGSTAT, "samtools flagstat $scratch_dir/$sample.$db_name.bam|"
-              or die "Error opening piped filehandle: $!";
-            while (<FLAGSTAT>) {
-                $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
-                $paired = $1 if (/([0-9]+) \+ [0-9]+ properly paired/);
-            }
-            close FLAGSTAT;
+    $cmd =
+        "picard -Xmx4G SortSam "
+      . "INPUT=$scratch_dir/$sample.$db_name.bam OUTPUT=$scratch_dir/$sample.$db_name.sorted.bam "
+      . "SORT_ORDER=coordinate CREATE_INDEX=true";
+    system($cmd) == 0 or die "Error executing command: $!";
+    copy( "$scratch_dir/$sample.$db_name.sorted.bam", "$out_dir/$sample/$sample.$db_name.bam" )
+      or die "Error copying $sample.$db_name.sorted.bam:$!";
+    copy( "$scratch_dir/$sample.$db_name.sorted.bai", "$out_dir/$sample/$sample.$db_name.bai" )
+      or die "Error copying $sample.$db_name.sorted.bai:$!";
+    my ( $mapped, $paired );
+    open FLAGSTAT, "samtools flagstat $scratch_dir/$sample.$db_name.bam|"
+      or die "Error opening piped filehandle: $!";
+    while (<FLAGSTAT>) {
+        $mapped = $1 if (/([0-9]+) \+ [0-9]+ mapped/);
+        $paired = $1 if (/([0-9]+) \+ [0-9]+ properly paired/);
+    }
+    close FLAGSTAT;
 
     #        open REPORT, ">$out_dir/$sample/$sample.$db_name.mapping_report.txt"
     #          or die "Error opening $out_dir/$sample/$sample.$db_name.mapping_report.txt:$!";
@@ -395,8 +396,8 @@ sub filter_bam {
     copy( "$scratch_dir/$sample.$db_name.filtered_reads.txt", "$out_dir/$sample/$sample.$db_name.filtered_reads.txt" )
       or die "Error copying $sample.$db_name.mapped_reads.txt: $!";
 
-    unlink "$out_dir/../latest" if (-l "$out_dir/../latest");
-    symlink($out_dir, "$out_dir/../latest") or die "Error creating symlink: $!";
+    unlink "$out_dir/../latest" if ( -l "$out_dir/../latest" );
+    symlink( $out_dir, "$out_dir/../latest" ) or die "Error creating symlink: $!";
 
     return (0);
 

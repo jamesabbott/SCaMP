@@ -38,14 +38,18 @@ DIR="$( cd "$( dirname "$0" )" ; pwd  -P)"
 export SCAMP_ROOT="${DIR}/.."
 export PERL5LIB="${DIR}/../lib"
 
-if [[ ! -e ${SCAMP_ROOT}/etc/SCaMP.yaml ]]; then
-  echo "SCaMP configuration file ${SCAMP_ROOT}/etc/SCaMP.yaml not found"
+if [[ -e "$HOME/.SCaMP.yaml" ]] ; then 
+	CONF_FILE="$HOME/.SCaMP.yaml"
+elif [[ -e "${SCAMP_ROOT}/etc/SCaMP.yaml" ]]; then
+	CONF_FILE="${SCAMP_ROOT}/etc/SCaMP.yaml"
+else
+  echo "SCaMP configuration file not found"
   exit 1
 fi
 
 #poor mans YAML parser...
-WORK_DIR=$(grep ^work_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
-SCRATCH_DIR=$(grep ^scratch_dir: ${SCAMP_ROOT}/etc/SCaMP.yaml|awk -F: '{print $2}'|sed 's/ //g')
+WORK_DIR=$(grep ^work_dir: ${CONF_FILE}|awk -F: '{print $2}'|sed 's/ //g')
+SCRATCH_DIR=$(grep ^scratch_dir: ${CONF_FILE}|awk -F: '{print $2}'|sed 's/ //g')
 
 declare -a RUN_SCRIPTS=(qc_trim filter_reads)
 declare -A IN_DIRS=([qc_trim]=reads [filter_reads]=""])
