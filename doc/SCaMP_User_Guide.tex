@@ -13,7 +13,9 @@
 \usepackage{todonotes}
 \usepackage{subcaption}
 \usepackage{natbib}
+\usepackage{tocloft}
 
+\setlength{\cftbeforesecskip}{6pt}
 \setlength{\headsep}{20pt}
 \setlength{\headheight}{12pt}
 \pagestyle{fancy}
@@ -32,12 +34,13 @@
   \setlength{\parskip}{0pt}
 }{\end{itemize}}
 
+\newcommand{\para}[1]{\paragraph{#1}\mbox{}\\}
 
 \begin{document}
 \begin{titlepage}
 \begin{center}
   \bfseries
-  \huge SCalable Metagenomics Pipeline (SCaMP) User Guide
+  \huge SCalable Metagenomics Pipeline (SCaMP) \\User Guide
   \vskip 0.1in
   \textsc{\normalsize Version 0.10 }
   \vskip 0.1in
@@ -226,16 +229,142 @@ they should be named in accordance with one of the following convention:
 The filename should start with the name of the sample, followed by an optional
 barcode (typically six or eight bases). Additional details may optionally be
 included in the next section of the filename, following which the filename must
-include R1 or R2 (indicating read 1 or read 2 of the paired reads). The
-filename should be suffixed with either .fastq.gz or fq.gz.
+include either \_1/\_2, or \_R1/\_R2 (indicating read 1 or read 2 of the paired
+reads). The filename should be suffixed with either .fastq.gz or fq.gz.
 
 Examples of valid filenames include:
 \begin{tight_itemize}
 \item \textit{Sample-001\_R1.fastq.gz}
 \item \textit{Sample-002\_R2.fq.gz}
-\item \textit{Sample-003\_TAATCG\_L005.R1.fastq.gz}
+\item \textit{Sample-003\_12.fq.gz}
+\item \textit{Sample-004\_TAATCG\_L005.R1.fastq.gz}
 \end{tight_itemize}
 
 \subsubsection{Reference Databases}
+
+SCaMP allows samples to be filtered against various taxonomic databases to
+remove e.g. host contamination. The databases should be located within the
+directory specified by the {\tt database\_dir} parameter in the {\tt SCaMP.yaml}
+configuration file. A separate subdirectory should be created for each database
+(named with the database name), and within this mutliple copies of the database
+can exist in e.g. time-stamped directories, with a symlink named 'latest' to
+the most recent copy of the database, which will be used for analysis.
+
+\para{Reference Database Format}
+
+Each database used by for filtering by these scripts requires the following:
+
+\begin{tight_enumerate}
+\item A fasta formatted sequence of sequences, named 'database.fa'
+\item A fasta index,generatd with 'samtools faidx' ('database.fa.fai')
+\item BWA indices appropriate for searching with BWA MEM 
+\item A tab-delimited file ('database.tax.dat') relating taxonomy data to each sequence ('database.taxid.dat')
+\end{tight_enumerate}
+
+The tab-delimited file should be formatted as follows:
+
+\begin{verbatim}
+##Accession   Scientific name  Strain  NCBI TaxId
+chr1    Homo sapiens            9606
+578454_CABE01000000     Candida parapsilosis    CDC317  578454
+\end{verbatim}
+
+In the Homo sapiens example there is no strain defined, so this field is simply left blank
+
+\para{Downloading Databases}
+
+The {\tt bin/build\_ref\_db} script allows preconfigured reference databases to
+be downloaded and appropriately formatted, with the resulting databases being
+made available in {\tt database\_dir}. A list of the databases available for
+downloaded can be obtained by running
+
+{\tt build\_ref\_db --avail}
+
+Downloading and formatting a database can be achieved by running
+
+{\tt build\_ref\_db --db dbname}
+
+\para{Database Configuration}
+
+Configurations for the available databases are defined in the {\tt databases}
+block of the SCaMP configuration file. These can be modified as required to
+create custom databases for screening sequence reads. The following parameters
+may be defined to configure a database:
+
+\begin{tight_itemize}
+\item \textbf{format}: Format of reference database. Valid values: embl/genbank
+\item \textbf{type}: Download type. Valid values: ftp/entrez/entrez\_accession.
+\begin{tight_itemize}
+\item \textit{ftp}: Defines a database to be downloaded from an ftp server.
+Requires \textit{ftphost}, \textit{ftpdir} and \textit{filepattern} parameters
+to be defined.
+\item \textit{entrez}: Defines a database to be retrieved from the NCBI using
+an entrez query. Requires \textit{entrez\_query} parameter to be defined.
+\item \textit{entrez\_accession}: Defines a database to be retrieved from the
+NCBI using entrez from a list of accessions. Requires \textit{accession}
+parameter to be defined.
+\end{tight_itemize}
+\item \textbf{ftphost}: URI of FTP server i.e. {\tt ftp.ensemblgenomes.org}
+\item \textbf{ftpdir}: Path to directory on FTP server where database is found.
+i.e.  {\tt /pub/plants/current/embl}
+\item \textbf{filepattern}: Regular expression defining list of files to be
+downloaded. i.e. {\tt .dat.gz\$}
+\item \textbf{entrez\_query}:  Entrez query to select records for inclusion in
+database i.e. {\tt "Viruses"[Organism]}
+\item \textbf{accessions}: List of accession to be included in database
+\end{tight_itemize}
+
+\section{Running SCaMP}
+
+SCaMP is designed to be run under either a PBSPro or Sun Grid Engine
+batch-queueing environment. While all the components of the pipeline can be
+submitted manually, the {\tt SCaMP} script will take care of submitting the
+correct number of array tasks to the available queueing system. 
+
+Each component (or stage) or the pipeline is run by a separate script located
+in the {\tt bin} directory.  SCaMP requires the stage of the pipeline to run to
+be defined, and will pass through additional command-line arguments to the
+individual stage script. Provided arguments will be verified before the jobs is
+submitted to the queueing system.
+
+Running {\tt SCaMP} without any arguments provides usage information, along
+with a list of the available stages which can be run. \textbf{N.B. stages must
+be executed in the correct order, as described below.}
+
+%TODO: Update output...
+\begin{verbatim}
+[jamesa@wssb-james ]$ SCaMP 
+
+SCaMP: SCalable Metagenomics Pipeline
+usage: /home/jamesa/src/SCaMP/bin/SCaMP -r run_stage [-l|--local] [-- script arguments]
+
+Configured stages: qc_trim filter_reads
+
+[jamesa@wssb-james doc]$ 
+\end{verbatim}
+
+SCaMP is designed to be run  either on cluster environments with local storage
+available on each compute node, or on systems with high-performance parallel
+filesystems i.e. GPFS/Lustre. In a typical cluster environment, it is
+preferable for data to be copied to a temporary directory on the execution node
+to ensure heavy IO loads take place on faster local storage and reduce network
+load on the cluster. In contrast, systems with parallel file systems or large
+shared memory machines with locally attached storage can manage the IO loads
+from shared storage adequately, hence it is optimal not to move data to a
+temporary directory for computation.
+
+By default, SCaMP will copy databases and sample data to a temporary directory
+on each cluster node. If your environment benefits from fast shared storage,
+then SCaMP can be run using the {\tt -l} or {\tt --local} arguments, in which
+case the databases and sample data will not be copied to local temporary
+directories. For example, the command:
+
+\begin{verbatim}
+SCaMP -r qc_trim --local
+\end{verbatim}
+
+will execute the 'qc\_trim' stage using local storage. Consult your local
+system maintainers if you are unsure of wheter local storage or temporary
+storage on the compute nodes should be used in your environment. 
 
 \end{document}
