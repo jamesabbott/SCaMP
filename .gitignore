@@ -1,5 +1,4 @@
 *.sw?
-doc/*.pdf
 doc/*.aux
 doc/*.toc
 doc/*.log
