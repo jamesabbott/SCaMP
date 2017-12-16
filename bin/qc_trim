@@ -74,21 +74,25 @@ Trimmed sequence reads, in gzipped fastq format
 
 =over                                                      
 
-=item B<qual>: Set quality threshold (default: 20)
+=item B<qual>
+
+Set quality threshold (default: 20)
 
 Bases with a quality score below this value will be trimmed from the end of
 sequences
 
-=item B<length>: Seq minimum read length (default: 50)
+=item B<length>
+
+Seq minimum read length (default: 50)
 
 Reads shorter than this value will be discarded following quality and adapter
 trimming
 
-=item B<adapters>: Path to tab-delimited file of bar-coded adapter sequences to
-remove
+=item B<adapters>
 
-A tab-delimited file can be specified containing specific adapter sequences for
-individual barcodes. This should contain 3 columns:
+Path to tab-delimited file of bar-coded adapter sequences to
+remove. A tab-delimited file can be specified containing specific adapter
+sequences for individual barcodes. This should contain 3 columns:
 
 =over
 
@@ -116,20 +120,28 @@ which will take care of setting these appropriately.
 
 =over
 
-=item B<stage>: Stage data to local storage
+=item B<stage>
+
+Stage data to local storage
 
 If this argument is provided, sample data will be copied to a local temporary
 directory on the compute node running the job, otherwise the data will be
 processed I<in-situ>
 
-=item B<check>: Check command syntax
+=item B<check>
+
+Check command syntax
 
 Provides a check that the provided syntax/file-naming is correct to ensure jobs
 submitted to the batch system are valid.
 
-=item B<help>: Display help text                           
+=item B<help>
 
-=item B<man>: Display manual page                          
+Display help text                           
+
+=item B<man>
+
+Display manual page                          
 
 =back                                                      
 

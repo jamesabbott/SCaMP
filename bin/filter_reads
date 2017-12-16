@@ -39,19 +39,56 @@ The outputs from the filtering will be written to a I<filtered/databasename>
 directory within work_dir. A symbolic link (I<latest>) will indicate the
 outputs of the most recent filtering operation, since multiple databases
 filtering outputs may be present in this directory. The fastq files in the
-I<latest> linked directory will be used as input for the next filter\_reads
+I<latest> linked directory will be used as input for the next filter_reads
 run, such that filtering operations are carried out successively. If no
-I<latest> linked directory exists then fastq files in the I<trimmed> directory
-will be used for filtering instead. The following output files are generated
-for each run of filter\_reads:
+I<filtered/latest> linked directory exists then fastq files in the I<trimmed>
+directory will be used as inputs to the filtering process instead. 
 
-%TODO: Complete this section
+Output files are split into separate subdirectories for each sample, with each
+subdirectory containing the following output files:
+
+=over 4
+
+=item I<sample.database.bam>
+
+BAM format file containing all reads following alignment agsint the selected
+database.
+
+=item I<sample.database.aligned.bam>
+
+BAM format alignment of reads which align against the selected database.
+
+=item I<sample.database.aligned.bam>
+
+BAM format file containing reads which do not align against the selected
+database.
+
+=item I<sample.database.filtered_reads.txt>
+
+Text file containing list of reads ID's which align against the database and
+have therefore been filtered from the output fastq files.
+
+=item I<sample.database.mapping_report.txt>
+
+Text format report containing breakdown of number of reads aligned to different
+target sequences in the selected database, and the total number of reads
+aligned to each taxon represented in the database
+
+=item I<sample.database.filtered_[12].fq.gz>
+
+Fastq files containing reads following removal of sequences matching database
+sequences.
+
+=back
+
 
 =head1 REQUIRED ARGUMENTS
 
 =over 4
 
-=item B<db>: Database to align reads against
+=item B<db> 
+
+Database to align reads against
 
 =back
 
@@ -63,20 +100,33 @@ which will take care of setting these appropriately.
 
 =over
 
-=item B<stage>: Stage data to local storage
+=item B<stage>
+
+Stage data to local storage
 
 If this argument is provided, sample data will be copied to a local temporary
 directory on the compute node running the job, otherwise the data will be
 processed I<in-situ>
 
-=item B<check>: Check command syntax
+=item B<check>
+
+Check command syntax
 
 Provides a check that the provided syntax/file-naming is correct to ensure jobs
 submitted to the batch system are valid.
 
+=item B<help>
+
+Display help text                           
+
+=item B<man>
+
+Display manual page                          
+
 =back
 
 =cut
+
 
 use warnings;
 use strict;

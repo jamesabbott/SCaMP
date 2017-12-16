@@ -173,7 +173,8 @@ configured.
 
 \subsection{Software Layout}
 
-The SCaMP software is layed out across a few directories, the contents of which are hopefully self-explanatory:
+The SCaMP software is laid out across a few directories, the contents of which
+are hopefully self-explanatory:
 
 {\tt bin} - Executable scripts:
 \begin{tight_itemize}
@@ -228,7 +229,7 @@ usage.
 \subsubsection{Sequence Reads}
 
 A directory should be created in {\tt work\_dir} named {\tt reads}, and fastq
-files (prefereably compressed using gzip) for the project should be copied into
+files (preferably compressed using gzip) for the project should be copied into
 this directory.
 
 SCaMP is designed to be run using paired reads from an Illumina sequencer,
@@ -257,7 +258,7 @@ SCaMP allows samples to be filtered against various taxonomic databases to
 remove e.g. host contamination. The databases should be located within the
 directory specified by the {\tt database\_dir} parameter in the {\tt SCaMP.yaml}
 configuration file. A separate subdirectory should be created for each database
-(named with the database name), and within this mutliple copies of the database
+(named with the database name), and within this multiple copies of the database
 can exist in e.g. time-stamped directories, with a symlink named 'latest' to
 the most recent copy of the database, which will be used for analysis.
 
@@ -267,7 +268,7 @@ Each database used by for filtering by these scripts requires the following:
 
 \begin{tight_enumerate}
 \item A fasta formatted sequence of sequences, named 'database.fa'
-\item A fasta index,generatd with 'samtools faidx' ('database.fa.fai')
+\item A fasta index, generated with 'samtools faidx' ('database.fa.fai')
 \item BWA indices appropriate for searching with BWA MEM 
 \item A tab-delimited file ('database.tax.dat') relating taxonomy data to each sequence ('database.taxid.dat')
 \end{tight_enumerate}
@@ -354,7 +355,7 @@ Configured stages: qc_trim filter_reads
 [jamesa@wssb-james doc]$ 
 \end{verbatim}
 
-SCaMP is designed to be run  either on cluster environments with local storage
+SCaMP is designed to be run either on cluster environments with local storage
 available on each compute node, or on systems with high-performance parallel
 filesystems i.e. GPFS/Lustre. In a typical cluster environment, it is
 preferable for data to be copied to a temporary directory on the execution node
@@ -375,18 +376,28 @@ SCaMP -r qc_trim --local
 \end{verbatim}
 
 will execute the 'qc\_trim' stage using local storage. Consult your local
-system maintainers if you are unsure of wheter local storage or temporary
+system maintainers if you are unsure of whether local storage or temporary
 storage on the compute nodes should be used in your environment. 
-q
+
+Executing the 'SCaMP' script results in the command-line parameters being
+validated by the stage script, to ensure that all necessary arguments have been
+provided, and that the directories/files required for the stage to run are
+available prior to submitting the job. Once these have been validated
+successfully, the  job will be submitted to the PBS or SGE system and the job
+id of the stage will be displayed on the screen. Progress of the job can then
+be monitored using the {\tt qstat} command. 
+
+Once the job completes, any standard output or standard error generated during
+it's execution will be writen to a file named {\tt SCaMP:stage.oJOBID.TASKID}
+in the directory from which the job was submitted.
+
 \subsection{SCaMP Stages}
 
 The following section descriptions obtained from the embedded help
 documentation within each script. Please refer to \ref{pipeline} for the
-correct ording in which the stages should be run.
+correct ordering in which the stages should be run.
 
 \include{stages/qc_trim}
 \include{stages/filter_reads}
-
-
 
 \end{document}
