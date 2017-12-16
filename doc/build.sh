@@ -9,5 +9,7 @@ for file in qc_trim filter_reads; do
 	mv stages/${file}.tex.tmp stages/${file}.tex
 done
 
+/usr/bin/inkscape -z -C --file="SCaMP_workflow.svg" --export-pdf="SCaMP_workflow.pdf"
+
 pdflatex SCaMP_User_Guide.tex
 

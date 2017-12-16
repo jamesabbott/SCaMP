@@ -1,4 +1,5 @@
 *.sw?
+doc/SCaMP_workflow.pdf
 doc/*.aux
 doc/*.toc
 doc/*.log

@@ -168,8 +168,37 @@ configured.
 
 \subsection{The Pipeline} \label{pipeline}
 
-\todo{Write description of pipeline\ldots}
-\missingfigure{Need current pipeline figure}
+The SCaMP workflow consists of a number of independent stages
+(Figure \ref{fig:scamp_workflow}), and is designed to be run under a batch-queuing
+environment (PBSPro or Sun Grid Engine). A work directory needs to be created
+on shared storage accessible by the compute nodes under the control of the
+queueing system, and fastq files copied into a {\tt reads} directory within
+this work directory. Depending upon the compute configuration, data can either
+be copied to local storage on compute nodes, or analysed directly within the
+work directory. The path to the work directory needs to be defined within a
+SCaMP.yaml configuration file. Output files will be written within the work
+directory as the various stages of the pipeline are run. The stages of the
+SCaMP workflow need to be executed in the correct order - stages will look for
+the outputs files of preceding stages in the workflow as their input files,
+consequently executing the stages out of sequence will result in failed jobs. A
+summary of the various stages and execution order is shown in table
+\ref{tab:scamp_stages}. 
+
+\begin{figure}[!h] \fbox{\includegraphics[width=0.9\textwidth]{SCaMP_workflow}}
+\caption{SCaMP Workflow} \label{fig:scamp_workflow} \end{figure}
+
+\begin{table}[htb]
+\begin{tabular}{lll}
+\hline
+\textbf {Stage} & \textbf {Order}  & \textbf{Summary} \\
+\hline
+qc\_trim			& 	1 	&	Carries out QC analysis of sequence reads, and trims low-quality sequence and adapters \\
+filter\_reads 	&	2	&	Filters reads against databases of known sequences to remove e.g. host contaminants \\
+\hline
+\end{tabular}
+\captionof{table}{Stages of the SCaMP workflow, including execution order.}
+\label{tab:scamp_stages}
+\end{table}
 
 \subsection{Software Layout}
 
@@ -399,5 +428,17 @@ correct ordering in which the stages should be run.
 
 \include{stages/qc_trim}
 \include{stages/filter_reads}
+
+\subsection{Example Analysis}
+
+The following commands illustrate a typical run of the SCaMP pipeline in the correct order of execution.
+
+\begin{verbatim}
+SCaMP -r qc_trim
+SCaMP -r filter_reads --db human
+SCaMP -r filter_reads --db plants 
+SCaMP -r filter_reads --db fungi
+SCaMP -r filter_reads --db parasites
+\end{verbatim}
 
 \end{document}
